@@ -1,23 +1,82 @@
-# Dependencies
+# ================================================================
+# TradeMind AI - Professional .gitignore
+# ================================================================
+
+# ================================================================
+# SECURITY - NEVER COMMIT THESE FILES
+# ================================================================
+# Environment files with sensitive data
+.env
+.env.local
+.env.production
+.env.staging
+backend/.env
+frontend/.env
+.env.development
+
+# API keys and secrets
+secrets/
+credentials/
+config/secrets/
+*.key
+*.pem
+*.crt
+api_keys.json
+config.json
+
+# ================================================================
+# DEPENDENCIES
+# ================================================================
+# Node.js
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Python
 backend/venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
-# Environment files (IMPORTANT!)
-.env
-.env.local
-.env.production
-.env.staging
+# ================================================================
+# BUILD OUTPUTS
+# ================================================================
+# Next.js
+.next/
+out/
+.vercel
 
-# Database files
-*.db
-*.sqlite
-*.sqlite3
+# Python builds
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
+# ================================================================
+# DEVELOPMENT FILES
+# ================================================================
 # Logs
 *.log
 logs/
@@ -31,47 +90,167 @@ pids
 *.seed
 *.pid.lock
 
-# Coverage directory used by tools like istanbul
+# Coverage and testing
 coverage/
 *.lcov
-
-# nyc test coverage
 .nyc_output
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
 
-# Next.js build output
-.next/
-out/
+# ================================================================
+# DATABASES
+# ================================================================
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+database.db
+trademind.db
 
-# Production build
-build/
-dist/
+# Database backups
+*.dump
+*.sql
+
+# ================================================================
+# TRADING DATA (Large Files)
+# ================================================================
+# Historical market data
+data/historical/
+data/backtest/
+data/live/
+historical_data/
+market_data/
+
+# Machine Learning models
+*.pkl
+*.joblib
+*.h5
+*.model
+*.onnx
+models/trained/
+models/checkpoints/
+
+# Trading logs and results
+trading_logs/
+backtest_results/
+performance_data/
+
+# Large CSV/Excel files
+*.csv
+*.xlsx
+*.xls
+data/*.csv
+data/*.xlsx
+
+# ================================================================
+# CACHE AND TEMPORARY FILES
+# ================================================================
+# Cache directories
+.cache/
+.parcel-cache/
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
 
 # Temporary folders
 tmp/
 temp/
+.tmp/
 
-# OS generated files
+# ================================================================
+# IDE AND EDITOR FILES
+# ================================================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ================================================================
+# OPERATING SYSTEM FILES
+# ================================================================
+# macOS
 .DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
+Icon?
+
+# Windows
 ehthumbs.db
 Thumbs.db
+Desktop.ini
 
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
+# Linux
 *~
 
-# Model files (large files)
-*.pkl
-*.joblib
-*.h5
-*.model
+# ================================================================
+# DEPLOYMENT FILES
+# ================================================================
+# Docker
+.dockerignore
+Dockerfile.prod
 
-# API keys and secrets
-secrets/
-credentials/
+# Kubernetes
+k8s/secrets/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# ================================================================
+# MONITORING AND ANALYTICS
+# ================================================================
+# Logs from monitoring tools
+monitoring/
+metrics/
+alerts/
+
+# Performance profiling
+*.prof
+*.pprof
+
+# ================================================================
+# BACKUP FILES
+# ================================================================
+*.bak
+*.backup
+*.old
+*.orig
+
+# ================================================================
+# MISC
+# ================================================================
+# OS generated files
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
