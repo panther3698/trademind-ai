@@ -1,246 +1,269 @@
-// frontend/src/app/page.tsx
-// Complete updated homepage with Analytics Dashboard
+import React from 'react';
 
-'use client';
-
-import { useState, useEffect } from 'react';
-import LiveSignalsDemo from '@/components/LiveSignalsDemo';
-import AnalyticsDashboard from '@/components/analytics/AnalyticsDashboard';
-
-export default function Home() {
-  const [isConnected, setIsConnected] = useState(false);
-
+export default function HomePage() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+      {/* Navigation */}
+      <nav className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
               <div className="bg-blue-600 rounded-lg p-2">
                 <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">TradeMind AI</h1>
-                <p className="text-sm text-gray-500">Professional Trading Signals</p>
-              </div>
+              <span className="text-xl font-bold text-gray-900">TradeMind AI</span>
             </div>
-            
-            <div className="flex items-center space-x-4">
-              <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm ${
-                isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-              }`}>
-                <div className={`w-2 h-2 rounded-full ${
-                  isConnected ? 'bg-green-500' : 'bg-red-500'
-                }`}></div>
-                <span>{isConnected ? 'Live' : 'Disconnected'}</span>
-              </div>
-              
-              <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <div className="flex items-center space-x-6">
+              <a href="/dashboard" className="text-gray-600 hover:text-blue-600 transition-colors">
+                Dashboard
+              </a>
+              <a href="http://localhost:8000/docs" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-blue-600 transition-colors">
+                API
+              </a>
+              <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
                 Start Free Trial
               </button>
             </div>
           </div>
         </div>
-      </header>
+      </nav>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Hero Section */}
-        <div className="text-center mb-12">
-          <h2 className="text-4xl font-bold text-gray-900 mb-4">
-            AI-Powered Trading Signals for Indian Markets
-          </h2>
-          <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
-            Get 2-3 high-confidence trading signals daily with 65%+ accuracy. 
-            Our AI analyzes 100+ stocks using advanced ML models and real-time news sentiment.
-          </p>
-          
-          {/* Enhanced Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 max-w-4xl mx-auto">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-blue-600">65%+</div>
+      {/* Hero Section */}
+      <section className="pt-20 pb-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <div className="mb-8">
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 mb-6">
+              🇮🇳 Made for Indian Markets
+            </span>
+            <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
+              AI-Powered Trading
+              <span className="block text-blue-600">Signals with 65%+ Accuracy</span>
+            </h1>
+            <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
+              Get 2-3 high-confidence trading signals daily for Indian stocks. 
+              Our AI analyzes market data, news sentiment, and technical indicators 
+              to deliver profitable trading opportunities.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <a href="/dashboard" 
+                className="bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors text-center">
+                View Live Dashboard
+              </a>
+              <button className="border-2 border-blue-600 text-blue-600 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-50 transition-colors">
+                Start 7-Day Free Trial
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Live Stats */}
+      <section className="py-16 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Real-Time Performance</h2>
+            <p className="text-gray-600">Live statistics from our AI trading system</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div className="text-center p-6 bg-green-50 rounded-xl">
+              <div className="text-3xl font-bold text-green-600 mb-2">65.3%</div>
               <div className="text-gray-600">Signal Accuracy</div>
             </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-green-600">2-3</div>
-              <div className="text-gray-600">Signals Per Day</div>
+            <div className="text-center p-6 bg-blue-50 rounded-xl">
+              <div className="text-3xl font-bold text-blue-600 mb-2">2-3</div>
+              <div className="text-gray-600">Daily Signals</div>
             </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-purple-600">100+</div>
+            <div className="text-center p-6 bg-purple-50 rounded-xl">
+              <div className="text-3xl font-bold text-purple-600 mb-2">100+</div>
               <div className="text-gray-600">Stocks Monitored</div>
             </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-orange-600">24/7</div>
-              <div className="text-gray-600">AI Monitoring</div>
+            <div className="text-center p-6 bg-orange-50 rounded-xl">
+              <div className="text-3xl font-bold text-orange-600 mb-2">₹12.5L</div>
+              <div className="text-gray-600">Avg Monthly Volume</div>
             </div>
           </div>
         </div>
+      </section>
 
-        {/* Live Signals Demo */}
-        <div className="mb-16">
-          <LiveSignalsDemo onConnectionChange={setIsConnected} />
-        </div>
-
-        {/* Analytics Dashboard */}
-        <div className="mb-16">
-          <AnalyticsDashboard />
-        </div>
-        
-        {/* Features Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
-          <div className="bg-white p-6 rounded-xl shadow-sm border hover:shadow-md transition-shadow">
-            <div className="bg-blue-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">AI-Powered Analysis</h3>
-            <p className="text-gray-600">Advanced machine learning models analyze technical indicators, sentiment, and market patterns with 63.8% proven accuracy.</p>
+      {/* Features */}
+      <section className="py-16 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Why Choose TradeMind AI?</h2>
+            <p className="text-gray-600">Professional-grade features for serious traders</p>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="bg-white p-8 rounded-xl shadow-sm">
+              <div className="bg-blue-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-6">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">AI-Powered Signals</h3>
+              <p className="text-gray-600">Advanced machine learning models analyze market patterns, news sentiment, and technical indicators for accurate predictions.</p>
+            </div>
 
-          <div className="bg-white p-6 rounded-xl shadow-sm border hover:shadow-md transition-shadow">
-            <div className="bg-green-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+            <div className="bg-white p-8 rounded-xl shadow-sm">
+              <div className="bg-green-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-6">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Real-Time Updates</h3>
+              <p className="text-gray-600">Live WebSocket connections deliver signals instantly. Never miss a trading opportunity with our real-time dashboard.</p>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Real-Time Signals</h3>
-            <p className="text-gray-600">Get instant notifications via Telegram when high-confidence trading opportunities are identified by our AI system.</p>
-          </div>
 
-          <div className="bg-white p-6 rounded-xl shadow-sm border hover:shadow-md transition-shadow">
-            <div className="bg-purple-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Performance Tracking</h3>
-            <p className="text-gray-600">Monitor signal performance with detailed analytics, transparent win/loss tracking, and comprehensive reporting.</p>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border hover:shadow-md transition-shadow">
-            <div className="bg-yellow-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Risk Management</h3>
-            <p className="text-gray-600">Built-in risk controls with automatic position sizing, stop-loss suggestions, and portfolio risk assessment.</p>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border hover:shadow-md transition-shadow">
-            <div className="bg-indigo-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Telegram Integration</h3>
-            <p className="text-gray-600">Seamless Telegram bot integration for instant signal delivery and optional auto-trading with human approval.</p>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border hover:shadow-md transition-shadow">
-            <div className="bg-red-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4V2a1 1 0 011-1h8a1 1 0 011 1v2m0 0V1a1 1 0 011-1h2a1 1 0 011 1v3M7 4H5a1 1 0 00-1 1v16a1 1 0 001 1h14a1 1 0 001-1V5a1 1 0 00-1-1h-2M7 4h10M9 9h6m-6 4h6m-6 4h6" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Market Intelligence</h3>
-            <p className="text-gray-600">Global market correlation analysis, news sentiment integration, and comprehensive technical indicator monitoring.</p>
-          </div>
-        </div>
-
-        {/* Pricing Preview */}
-        <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
-          <h3 className="text-2xl font-bold text-gray-900 mb-4">Ready to Start Trading Smarter?</h3>
-          <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
-            Join hundreds of successful traders who use TradeMind AI to make informed trading decisions. 
-            Start with our free trial and experience the power of AI-driven trading signals.
-          </p>
-          
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors">
-              Start Free Trial
-            </button>
-            <button className="border border-gray-300 hover:border-gray-400 text-gray-700 px-8 py-3 rounded-lg text-lg font-medium transition-colors">
-              View Pricing Plans
-            </button>
-          </div>
-          
-          <div className="mt-6 flex items-center justify-center space-x-6 text-sm text-gray-500">
-            <div className="flex items-center">
-              <svg className="w-4 h-4 text-green-500 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              7-day free trial
-            </div>
-            <div className="flex items-center">
-              <svg className="w-4 h-4 text-green-500 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              No credit card required
-            </div>
-            <div className="flex items-center">
-              <svg className="w-4 h-4 text-green-500 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              Cancel anytime
+            <div className="bg-white p-8 rounded-xl shadow-sm">
+              <div className="bg-purple-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-6">
+                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Secure & Reliable</h3>
+              <p className="text-gray-600">Bank-grade security with encrypted data transmission. 99.9% uptime guarantee for uninterrupted trading.</p>
             </div>
           </div>
         </div>
-      </main>
+      </section>
+
+      {/* Pricing */}
+      <section className="py-16 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Choose Your Plan</h2>
+            <p className="text-gray-600">Start with a free trial, upgrade when you're ready</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="border border-gray-200 rounded-xl p-8">
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Free Trial</h3>
+              <div className="text-3xl font-bold text-gray-900 mb-6">₹0<span className="text-lg text-gray-600">/7 days</span></div>
+              <ul className="space-y-3 mb-8">
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  1 signal per day
+                </li>
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Basic dashboard access
+                </li>
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Email support
+                </li>
+              </ul>
+              <button className="w-full border-2 border-blue-600 text-blue-600 py-3 rounded-lg hover:bg-blue-50 transition-colors">
+                Start Free Trial
+              </button>
+            </div>
+
+            <div className="border-2 border-blue-600 rounded-xl p-8 relative">
+              <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                <span className="bg-blue-600 text-white px-4 py-1 rounded-full text-sm font-medium">Most Popular</span>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Professional</h3>
+              <div className="text-3xl font-bold text-gray-900 mb-6">₹2,999<span className="text-lg text-gray-600">/month</span></div>
+              <ul className="space-y-3 mb-8">
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  3 signals per day
+                </li>
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Advanced analytics
+                </li>
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  API access
+                </li>
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Priority support
+                </li>
+              </ul>
+              <button className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors">
+                Get Started
+              </button>
+            </div>
+
+            <div className="border border-gray-200 rounded-xl p-8">
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Enterprise</h3>
+              <div className="text-3xl font-bold text-gray-900 mb-6">₹9,999<span className="text-lg text-gray-600">/month</span></div>
+              <ul className="space-y-3 mb-8">
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Unlimited signals
+                </li>
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Auto-trading
+                </li>
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Custom algorithms
+                </li>
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Dedicated support
+                </li>
+              </ul>
+              <button className="w-full border-2 border-blue-600 text-blue-600 py-3 rounded-lg hover:bg-blue-50 transition-colors">
+                Contact Sales
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Footer */}
-      <footer className="bg-gray-900 text-white mt-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div className="col-span-1 md:col-span-2">
-              <div className="flex items-center space-x-3 mb-4">
-                <div className="bg-blue-600 rounded-lg p-2">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold">TradeMind AI</h3>
-                  <p className="text-gray-400">Professional Trading Signals</p>
-                </div>
+      <footer className="bg-gray-900 text-white py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <div className="flex items-center justify-center space-x-2 mb-4">
+              <div className="bg-blue-600 rounded-lg p-2">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
               </div>
-              <p className="text-gray-400 max-w-md">
-                Empowering traders with AI-driven insights and real-time market intelligence. 
-                Built for the Indian markets with global perspective.
-              </p>
+              <span className="text-xl font-bold">TradeMind AI</span>
             </div>
-            
-            <div>
-              <h4 className="text-lg font-semibold mb-4">Product</h4>
-              <ul className="space-y-2 text-gray-400">
-                <li><a href="#" className="hover:text-white transition-colors">Live Signals</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Analytics</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Auto Trading</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">API Access</a></li>
-              </ul>
-            </div>
-            
-            <div>
-              <h4 className="text-lg font-semibold mb-4">Support</h4>
-              <ul className="space-y-2 text-gray-400">
-                <li><a href="#" className="hover:text-white transition-colors">Documentation</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Help Center</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Community</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Contact Us</a></li>
-              </ul>
-            </div>
-          </div>
-          
-          <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p>&copy; 2025 TradeMind AI. All rights reserved. Built with ❤️ for Indian traders.</p>
-            <p className="mt-2 text-sm">
-              <strong>Disclaimer:</strong> Trading involves risk. Past performance does not guarantee future results. 
-              Always do your own research before making investment decisions.
+            <p className="text-gray-400 mb-8">
+              Professional AI trading platform for Indian markets. 
+              Built with ❤️ for serious traders.
             </p>
+            <div className="flex justify-center space-x-6">
+              <a href="https://github.com/panther3698/trademind-ai" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors">
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+              </a>
+            </div>
+            <div className="mt-8 pt-8 border-t border-gray-800 text-center text-gray-400">
+              <p>&copy; 2025 TradeMind AI. All rights reserved. Trading involves risk.</p>
+            </div>
           </div>
         </div>
       </footer>
