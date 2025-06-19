@@ -22,9 +22,9 @@ export default function HomePage() {
               <a href="http://localhost:8000/docs" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-blue-600 transition-colors">
                 API
               </a>
-              <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-                Start Free Trial
-              </button>
+              <a href="https://github.com/panther3698/trademind-ai" target="_blank" rel="noopener noreferrer" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                View Code
+              </a>
             </div>
           </div>
         </div>
@@ -34,65 +34,66 @@ export default function HomePage() {
       <section className="pt-20 pb-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="mb-8">
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 mb-6">
-              🇮🇳 Made for Indian Markets
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800 mb-6">
+              🔬 Research & Development Platform
             </span>
             <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
-              AI-Powered Trading
-              <span className="block text-blue-600">Signals with 65%+ Accuracy</span>
+              AI Trading Signal
+              <span className="block text-blue-600">Research Platform</span>
             </h1>
             <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
-              Get 2-3 high-confidence trading signals daily for Indian stocks. 
-              Our AI analyzes market data, news sentiment, and technical indicators 
-              to deliver profitable trading opportunities.
+              A comprehensive AI system for analyzing Indian stock markets. 
+              This platform generates trading signals for research and backtesting purposes only.
+              <strong className="block mt-2 text-gray-800">Not for public trading advice or investment recommendations.</strong>
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a href="/dashboard" 
                 className="bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors text-center">
-                View Live Dashboard
+                View Research Dashboard
               </a>
-              <button className="border-2 border-blue-600 text-blue-600 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-50 transition-colors">
-                Start 7-Day Free Trial
-              </button>
+              <a href="https://github.com/panther3698/trademind-ai" target="_blank" rel="noopener noreferrer"
+                className="border-2 border-blue-600 text-blue-600 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-50 transition-colors text-center">
+                Explore Code
+              </a>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Live Stats */}
+      {/* Research Stats */}
       <section className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Real-Time Performance</h2>
-            <p className="text-gray-600">Live statistics from our AI trading system</p>
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Research Performance Metrics</h2>
+            <p className="text-gray-600">Algorithm testing and backtesting results</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div className="text-center p-6 bg-green-50 rounded-xl">
               <div className="text-3xl font-bold text-green-600 mb-2">65.3%</div>
-              <div className="text-gray-600">Signal Accuracy</div>
+              <div className="text-gray-600">Backtesting Accuracy</div>
             </div>
             <div className="text-center p-6 bg-blue-50 rounded-xl">
               <div className="text-3xl font-bold text-blue-600 mb-2">2-3</div>
-              <div className="text-gray-600">Daily Signals</div>
+              <div className="text-gray-600">Signals per Day</div>
             </div>
             <div className="text-center p-6 bg-purple-50 rounded-xl">
               <div className="text-3xl font-bold text-purple-600 mb-2">100+</div>
-              <div className="text-gray-600">Stocks Monitored</div>
+              <div className="text-gray-600">Stocks Analyzed</div>
             </div>
             <div className="text-center p-6 bg-orange-50 rounded-xl">
-              <div className="text-3xl font-bold text-orange-600 mb-2">₹12.5L</div>
-              <div className="text-gray-600">Avg Monthly Volume</div>
+              <div className="text-3xl font-bold text-orange-600 mb-2">45s</div>
+              <div className="text-gray-600">Signal Generation</div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Features */}
+      {/* Technology Stack */}
       <section className="py-16 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Why Choose TradeMind AI?</h2>
-            <p className="text-gray-600">Professional-grade features for serious traders</p>
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Technology & Features</h2>
+            <p className="text-gray-600">Modern architecture for financial data analysis</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="bg-white p-8 rounded-xl shadow-sm">
@@ -101,8 +102,8 @@ export default function HomePage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">AI-Powered Signals</h3>
-              <p className="text-gray-600">Advanced machine learning models analyze market patterns, news sentiment, and technical indicators for accurate predictions.</p>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">AI Signal Generation</h3>
+              <p className="text-gray-600">Machine learning models for market pattern recognition, technical analysis, and sentiment scoring from news data.</p>
             </div>
 
             <div className="bg-white p-8 rounded-xl shadow-sm">
@@ -111,128 +112,64 @@ export default function HomePage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">Real-Time Updates</h3>
-              <p className="text-gray-600">Live WebSocket connections deliver signals instantly. Never miss a trading opportunity with our real-time dashboard.</p>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Real-Time Processing</h3>
+              <p className="text-gray-600">FastAPI backend with WebSocket connections for live market data processing and signal generation.</p>
             </div>
 
             <div className="bg-white p-8 rounded-xl shadow-sm">
               <div className="bg-purple-100 rounded-lg p-3 w-12 h-12 flex items-center justify-center mb-6">
                 <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2-2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">Secure & Reliable</h3>
-              <p className="text-gray-600">Bank-grade security with encrypted data transmission. 99.9% uptime guarantee for uninterrupted trading.</p>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Analytics Dashboard</h3>
+              <p className="text-gray-600">Comprehensive performance tracking, signal accuracy monitoring, and backtesting result analysis.</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Pricing */}
-      <section className="py-16 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Choose Your Plan</h2>
-            <p className="text-gray-600">Start with a free trial, upgrade when you're ready</p>
+      {/* Disclaimer Section */}
+      <section className="py-16 bg-yellow-50 border-t border-yellow-200">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <div className="bg-yellow-100 rounded-lg p-6">
+            <h3 className="text-xl font-semibold text-yellow-900 mb-4">Important Disclaimer</h3>
+            <div className="text-yellow-800 space-y-2">
+              <p><strong>This is a research and development platform.</strong></p>
+              <p>• No trading advice or investment recommendations are provided</p>
+              <p>• All signals are for backtesting and algorithm development only</p>
+              <p>• Not registered as a SEBI Research Analyst</p>
+              <p>• Past performance does not guarantee future results</p>
+              <p>• Always consult qualified financial advisors before trading</p>
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="border border-gray-200 rounded-xl p-8">
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">Free Trial</h3>
-              <div className="text-3xl font-bold text-gray-900 mb-6">₹0<span className="text-lg text-gray-600">/7 days</span></div>
-              <ul className="space-y-3 mb-8">
-                <li className="flex items-center">
-                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  1 signal per day
-                </li>
-                <li className="flex items-center">
-                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Basic dashboard access
-                </li>
-                <li className="flex items-center">
-                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Email support
-                </li>
-              </ul>
-              <button className="w-full border-2 border-blue-600 text-blue-600 py-3 rounded-lg hover:bg-blue-50 transition-colors">
-                Start Free Trial
-              </button>
-            </div>
+        </div>
+      </section>
 
-            <div className="border-2 border-blue-600 rounded-xl p-8 relative">
-              <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                <span className="bg-blue-600 text-white px-4 py-1 rounded-full text-sm font-medium">Most Popular</span>
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">Professional</h3>
-              <div className="text-3xl font-bold text-gray-900 mb-6">₹2,999<span className="text-lg text-gray-600">/month</span></div>
-              <ul className="space-y-3 mb-8">
-                <li className="flex items-center">
-                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  3 signals per day
-                </li>
-                <li className="flex items-center">
-                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Advanced analytics
-                </li>
-                <li className="flex items-center">
-                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  API access
-                </li>
-                <li className="flex items-center">
-                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Priority support
-                </li>
-              </ul>
-              <button className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors">
-                Get Started
-              </button>
+      {/* Future Plans */}
+      <section className="py-16 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl font-bold text-gray-900 mb-8">Future Development Roadmap</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="p-6 border border-gray-200 rounded-lg">
+              <div className="text-2xl mb-3">📋</div>
+              <h3 className="font-semibold text-gray-900 mb-2">SEBI Registration</h3>
+              <p className="text-sm text-gray-600">Research Analyst certification for compliance</p>
             </div>
-
-            <div className="border border-gray-200 rounded-xl p-8">
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">Enterprise</h3>
-              <div className="text-3xl font-bold text-gray-900 mb-6">₹9,999<span className="text-lg text-gray-600">/month</span></div>
-              <ul className="space-y-3 mb-8">
-                <li className="flex items-center">
-                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Unlimited signals
-                </li>
-                <li className="flex items-center">
-                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Auto-trading
-                </li>
-                <li className="flex items-center">
-                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Custom algorithms
-                </li>
-                <li className="flex items-center">
-                  <svg className="w-5 h-5 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Dedicated support
-                </li>
-              </ul>
-              <button className="w-full border-2 border-blue-600 text-blue-600 py-3 rounded-lg hover:bg-blue-50 transition-colors">
-                Contact Sales
-              </button>
+            <div className="p-6 border border-gray-200 rounded-lg">
+              <div className="text-2xl mb-3">💰</div>
+              <h3 className="font-semibold text-gray-900 mb-2">Subscription Model</h3>
+              <p className="text-sm text-gray-600">Tiered pricing for different user types</p>
+            </div>
+            <div className="p-6 border border-gray-200 rounded-lg">
+              <div className="text-2xl mb-3">📱</div>
+              <h3 className="font-semibold text-gray-900 mb-2">Mobile App</h3>
+              <p className="text-sm text-gray-600">iOS and Android applications</p>
+            </div>
+            <div className="p-6 border border-gray-200 rounded-lg">
+              <div className="text-2xl mb-3">🔗</div>
+              <h3 className="font-semibold text-gray-900 mb-2">API Platform</h3>
+              <p className="text-sm text-gray-600">Developer API for integration</p>
             </div>
           </div>
         </div>
@@ -251,8 +188,8 @@ export default function HomePage() {
               <span className="text-xl font-bold">TradeMind AI</span>
             </div>
             <p className="text-gray-400 mb-8">
-              Professional AI trading platform for Indian markets. 
-              Built with ❤️ for serious traders.
+              Research platform for AI-powered market analysis. 
+              Built for learning and algorithm development.
             </p>
             <div className="flex justify-center space-x-6">
               <a href="https://github.com/panther3698/trademind-ai" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors">
@@ -262,7 +199,7 @@ export default function HomePage() {
               </a>
             </div>
             <div className="mt-8 pt-8 border-t border-gray-800 text-center text-gray-400">
-              <p>&copy; 2025 TradeMind AI. All rights reserved. Trading involves risk.</p>
+              <p>&copy; 2025 TradeMind AI Research Platform. For educational and research purposes only.</p>
             </div>
           </div>
         </div>
