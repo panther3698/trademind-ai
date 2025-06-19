@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     track_performance: bool = Field(default=True, env="TRACK_PERFORMANCE")
     analytics_retention_days: int = Field(default=90, env="ANALYTICS_RETENTION_DAYS")
     
+    # Development Mode Settings (NEW - for personal dashboard)
+    development_mode: bool = Field(default=True, env="DEVELOPMENT_MODE")
+    public_signals: bool = Field(default=False, env="PUBLIC_SIGNALS")
+    require_subscription: bool = Field(default=False, env="REQUIRE_SUBSCRIPTION")
+    personal_mode: bool = Field(default=True, env="PERSONAL_MODE")
+    enable_testing_controls: bool = Field(default=True, env="ENABLE_TESTING_CONTROLS")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -71,6 +78,16 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production environment"""
         return self.environment.lower() == "production"
+    
+    @property
+    def is_personal_mode(self) -> bool:
+        """Check if running in personal development mode"""
+        return self.development_mode and self.personal_mode
+    
+    @property
+    def should_show_disclaimers(self) -> bool:
+        """Check if disclaimers should be shown"""
+        return not self.public_signals
 
 # Global settings instance
 settings = Settings()
