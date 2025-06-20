@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 from pydantic import Field
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables"""
+    """Application settings with comprehensive configuration including ML capabilities"""
     
     # Database
     database_url: str = Field(default="sqlite:///./trademind.db", env="DATABASE_URL")
@@ -39,25 +39,35 @@ class Settings(BaseSettings):
     smtp_password: Optional[str] = Field(default=None, env="SMTP_PASSWORD")
     
     # System
-    environment: str = Field(default="development", env="ENVIRONMENT")
+    environment: str = Field(default="production", env="ENVIRONMENT")  # Updated to production default
     debug: bool = Field(default=True, env="DEBUG")
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     
     # Trading System
     max_signals_per_day: int = Field(default=3, env="MAX_SIGNALS_PER_DAY")
-    signal_generation_interval: int = Field(default=45, env="SIGNAL_GENERATION_INTERVAL")
+    signal_generation_interval: int = Field(default=60, env="SIGNAL_GENERATION_INTERVAL")  # Updated to 60 seconds
     min_confidence_threshold: float = Field(default=0.65, env="MIN_CONFIDENCE_THRESHOLD")
     
     # Analytics
     track_performance: bool = Field(default=True, env="TRACK_PERFORMANCE")
     analytics_retention_days: int = Field(default=90, env="ANALYTICS_RETENTION_DAYS")
     
-    # Development Mode Settings (NEW - for personal dashboard)
+    # Development Mode Settings (for personal dashboard)
     development_mode: bool = Field(default=True, env="DEVELOPMENT_MODE")
     public_signals: bool = Field(default=False, env="PUBLIC_SIGNALS")
     require_subscription: bool = Field(default=False, env="REQUIRE_SUBSCRIPTION")
     personal_mode: bool = Field(default=True, env="PERSONAL_MODE")
     enable_testing_controls: bool = Field(default=True, env="ENABLE_TESTING_CONTROLS")
+    
+    # ML Configuration (NEW - from merged script)
+    ml_confidence_threshold: float = Field(default=0.70, env="ML_CONFIDENCE_THRESHOLD")
+    enable_finbert: bool = Field(default=True, env="ENABLE_FINBERT")
+    enable_model_retraining: bool = Field(default=True, env="ENABLE_MODEL_RETRAINING")
+    model_retrain_frequency_days: int = Field(default=7, env="MODEL_RETRAIN_FREQUENCY")
+    
+    # Stock Universe Configuration (NEW - from merged script)
+    use_nifty_100: bool = Field(default=True, env="USE_NIFTY_100")
+    max_stocks_per_scan: int = Field(default=100, env="MAX_STOCKS_PER_SCAN")
     
     class Config:
         env_file = ".env"
@@ -72,7 +82,7 @@ class Settings(BaseSettings):
     @property
     def is_zerodha_configured(self) -> bool:
         """Check if Zerodha is properly configured"""
-        return bool(self.zerodha_api_key and self.zerodha_secret)
+        return bool(self.zerodha_api_key and self.zerodha_access_token)  # Updated to use access_token
     
     @property
     def is_production(self) -> bool:
@@ -88,6 +98,26 @@ class Settings(BaseSettings):
     def should_show_disclaimers(self) -> bool:
         """Check if disclaimers should be shown"""
         return not self.public_signals
+    
+    @property
+    def is_ml_enabled(self) -> bool:
+        """Check if ML features are enabled"""
+        return bool(self.ml_confidence_threshold > 0)
+    
+    @property
+    def effective_confidence_threshold(self) -> float:
+        """Get the effective confidence threshold (use ML threshold if available, fallback to min_confidence)"""
+        return max(self.ml_confidence_threshold, self.min_confidence_threshold)
+    
+    @property
+    def is_finbert_enabled(self) -> bool:
+        """Check if FinBERT sentiment analysis is enabled"""
+        return self.enable_finbert and self.is_ml_enabled
+    
+    @property
+    def should_retrain_models(self) -> bool:
+        """Check if model retraining is enabled"""
+        return self.enable_model_retraining and self.is_ml_enabled
 
 # Global settings instance
 settings = Settings()
