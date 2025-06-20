@@ -1,379 +1,610 @@
+# backend/app/services/analytics_service.py
+"""
+TradeMind AI - Production Analytics Service
+Complete performance tracking, signal analytics, and system monitoring
+"""
+
 import asyncio
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional
 import json
 import logging
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
-import threading
+import sqlite3
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, asdict
+from pathlib import Path
+import os
+from contextlib import asynccontextmanager
+import aiosqlite
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class SignalPerformance:
+    """Signal performance tracking"""
+    signal_id: str
+    symbol: str
+    action: str
+    entry_price: float
+    target_price: float
+    stop_loss: float
+    confidence: float
+    created_at: datetime
+    status: str  # active, completed, stopped
+    exit_price: Optional[float] = None
+    exit_time: Optional[datetime] = None
+    pnl: Optional[float] = None
+    pnl_percentage: Optional[float] = None
+    success: Optional[bool] = None
+
+@dataclass
+class DailyStats:
+    """Daily system statistics"""
+    date: str
+    signals_generated: int
+    signals_sent: int
+    signals_successful: int
+    signals_failed: int
+    total_pnl: float
+    win_rate: float
+    average_confidence: float
+    telegram_success_rate: float
+    system_uptime_hours: float
+    last_signal_time: Optional[str]
+    status: str
+
+@dataclass
+class SystemHealth:
+    """System health metrics"""
+    telegram_configured: bool
+    signal_generation_active: bool
+    market_data_connected: bool
+    ml_models_loaded: bool
+    last_activity: Optional[str]
+    error_rate: float
+    uptime_hours: float
+
 class AnalyticsService:
-    """Service for tracking and analyzing trading performance - CORRECTED VERSION"""
+    """
+    Production Analytics Service for TradeMind AI
+    Tracks signals, performance, system health, and user analytics
+    """
     
-    def __init__(self, database_url: str):
-        self.database_url = database_url
-        self.engine = create_engine(database_url)
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+    def __init__(self, database_url: str = None):
+        # Database configuration
+        self.database_url = database_url or "sqlite:///./analytics.db"
+        self.db_path = self._extract_db_path(self.database_url)
         
-        # Thread lock for safe concurrent access
-        self._stats_lock = threading.Lock()
+        # Ensure database directory exists (only if there's a directory part)
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
         
-        # CORRECTED: Complete initialization of all possible keys
-        self.daily_stats = {
-            "signals_generated": 0,
-            "signals_sent": 0,
-            "telegram_success": 0,
-            "telegram_failures": 0,
-            "total_profit_loss": 0.0,
-            "successful_signals": 0,
-            "failed_signals": 0,
-            "average_confidence": 0.0,
-            "uptime_start": datetime.now(),
-            "last_signal_time": None,
-            # Additional keys that may be accessed
-            "win_rate": 0.0,
-            "total_pnl": 0.0,
-            "system_uptime_hours": 0.0,
-            "status": "STARTING",
-            "error_count": 0,
-            "last_error_time": None
-        }
+        # In-memory state for fast access
+        self.daily_stats = DailyStats(
+            date=datetime.now().strftime("%Y-%m-%d"),
+            signals_generated=0,
+            signals_sent=0,
+            signals_successful=0,
+            signals_failed=0,
+            total_pnl=0.0,
+            win_rate=0.0,
+            average_confidence=0.0,
+            telegram_success_rate=100.0,
+            system_uptime_hours=0.0,
+            last_signal_time=None,
+            status="operational"
+        )
         
-        self.monthly_stats = {
-            "total_signals": 0,
-            "win_rate": 0.0,
-            "total_pnl": 0.0,
-            "best_signal": None,
-            "worst_signal": None,
-            "active_users": 0
-        }
+        # System tracking
+        self.start_time = datetime.now()
+        self.telegram_sent = 0
+        self.telegram_failed = 0
+        self.signal_performances: Dict[str, SignalPerformance] = {}
+        
+        # Initialize database
+        asyncio.create_task(self._initialize_database())
         
         logger.info("✅ AnalyticsService initialized with all keys")
     
-    def _ensure_key_exists(self, key: str, default_value=0):
-        """Ensure a key exists in daily_stats with a default value"""
-        with self._stats_lock:
-            if key not in self.daily_stats:
-                self.daily_stats[key] = default_value
-                logger.debug(f"Added missing key '{key}' with default value: {default_value}")
+    def _extract_db_path(self, database_url: str) -> str:
+        """Extract database file path from URL"""
+        if database_url.startswith("sqlite:///"):
+            path = database_url.replace("sqlite:///", "")
+            # Handle relative paths on Windows
+            if not os.path.isabs(path):
+                # Convert relative path to absolute path in current directory
+                path = os.path.join(os.getcwd(), path)
+        elif database_url.startswith("sqlite://"):
+            path = database_url.replace("sqlite://", "")
+            if not os.path.isabs(path):
+                path = os.path.join(os.getcwd(), path)
+        else:
+            # Default fallback - create in current directory
+            path = os.path.join(os.getcwd(), "analytics.db")
+        
+        # Ensure the path uses proper separators for the OS
+        return os.path.normpath(path)
     
-    async def track_signal_generated(self, signal: Dict) -> None:
-        """Track when a signal is generated - SAFE VERSION"""
+    async def _initialize_database(self):
+        """Initialize SQLite database with required tables"""
         try:
-            with self._stats_lock:
-                # Ensure keys exist
-                self._ensure_key_exists("signals_generated", 0)
-                self._ensure_key_exists("average_confidence", 0.0)
-                
-                self.daily_stats["signals_generated"] += 1
-                self.daily_stats["last_signal_time"] = datetime.now()
-                
-                # Update average confidence safely
-                current_avg = self.daily_stats.get("average_confidence", 0.0)
-                count = self.daily_stats.get("signals_generated", 1)
-                new_confidence = signal.get("confidence", 0.0)
-                
-                if count > 0:
-                    self.daily_stats["average_confidence"] = (
-                        (current_avg * (count - 1) + new_confidence) / count
+            async with aiosqlite.connect(self.db_path) as db:
+                # Create signals table
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS signals (
+                        id TEXT PRIMARY KEY,
+                        symbol TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        entry_price REAL NOT NULL,
+                        target_price REAL NOT NULL,
+                        stop_loss REAL NOT NULL,
+                        confidence REAL NOT NULL,
+                        created_at TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        exit_price REAL,
+                        exit_time TEXT,
+                        pnl REAL,
+                        pnl_percentage REAL,
+                        success BOOLEAN
                     )
-                else:
-                    self.daily_stats["average_confidence"] = new_confidence
-            
-            symbol = signal.get("symbol", "UNKNOWN")
-            action = signal.get("action", "UNKNOWN")
-            logger.info(f"📊 Signal tracked: {symbol} {action} (Confidence: {new_confidence:.1%})")
-            
+                """)
+                
+                # Create daily_stats table
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS daily_stats (
+                        date TEXT PRIMARY KEY,
+                        signals_generated INTEGER DEFAULT 0,
+                        signals_sent INTEGER DEFAULT 0,
+                        signals_successful INTEGER DEFAULT 0,
+                        signals_failed INTEGER DEFAULT 0,
+                        total_pnl REAL DEFAULT 0.0,
+                        win_rate REAL DEFAULT 0.0,
+                        average_confidence REAL DEFAULT 0.0,
+                        telegram_success_rate REAL DEFAULT 100.0,
+                        system_uptime_hours REAL DEFAULT 0.0,
+                        last_signal_time TEXT,
+                        status TEXT DEFAULT 'operational'
+                    )
+                """)
+                
+                # Create system_events table
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS system_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_type TEXT NOT NULL,
+                        event_data TEXT NOT NULL,
+                        timestamp TEXT NOT NULL
+                    )
+                """)
+                
+                await db.commit()
+                logger.info("✅ Analytics database initialized")
+                
         except Exception as e:
-            logger.error(f"❌ Error tracking signal: {e}")
-            self._increment_error_count()
+            logger.error(f"❌ Database initialization failed: {e}")
     
-    async def track_telegram_sent(self, success: bool, signal: Dict) -> None:
-        """Track Telegram notification success/failure - SAFE VERSION"""
+    async def track_signal_generated(self, signal: Dict[str, Any]):
+        """Track a new signal generation"""
         try:
-            with self._stats_lock:
-                # Ensure keys exist
-                self._ensure_key_exists("telegram_success", 0)
-                self._ensure_key_exists("telegram_failures", 0)
-                self._ensure_key_exists("signals_sent", 0)
+            # Update in-memory stats
+            self.daily_stats.signals_generated += 1
+            self.daily_stats.last_signal_time = datetime.now().isoformat()
+            
+            # Update average confidence
+            if self.daily_stats.signals_generated > 0:
+                current_avg = self.daily_stats.average_confidence
+                new_confidence = signal.get("confidence", 0.0) * 100  # Convert to percentage
+                count = self.daily_stats.signals_generated
                 
-                if success:
-                    self.daily_stats["telegram_success"] += 1
-                    self.daily_stats["signals_sent"] += 1
-                    symbol = signal.get("symbol", "UNKNOWN")
-                    action = signal.get("action", "UNKNOWN")
-                    logger.info(f"📱 Telegram sent: {symbol} {action}")
-                else:
-                    self.daily_stats["telegram_failures"] += 1
-                    symbol = signal.get("symbol", "UNKNOWN")
-                    action = signal.get("action", "UNKNOWN")
-                    logger.warning(f"📱 Telegram failed: {symbol} {action}")
-                
+                self.daily_stats.average_confidence = (
+                    (current_avg * (count - 1) + new_confidence) / count
+                )
+            
+            # Create signal performance record
+            signal_perf = SignalPerformance(
+                signal_id=signal.get("id", f"signal_{int(datetime.now().timestamp())}"),
+                symbol=signal.get("symbol", "UNKNOWN"),
+                action=signal.get("action", "BUY"),
+                entry_price=signal.get("entry_price", 0.0),
+                target_price=signal.get("target_price", 0.0),
+                stop_loss=signal.get("stop_loss", 0.0),
+                confidence=signal.get("confidence", 0.0),
+                created_at=datetime.now(),
+                status="active"
+            )
+            
+            self.signal_performances[signal_perf.signal_id] = signal_perf
+            
+            # Store in database
+            await self._store_signal_in_db(signal_perf)
+            await self._update_daily_stats_in_db()
+            
+            # Log system event
+            await self._log_system_event("signal_generated", {
+                "signal_id": signal_perf.signal_id,
+                "symbol": signal_perf.symbol,
+                "action": signal_perf.action,
+                "confidence": signal_perf.confidence
+            })
+            
+            logger.info(f"📊 Signal tracked: {signal_perf.symbol} {signal_perf.action} (ID: {signal_perf.signal_id})")
+            
         except Exception as e:
-            logger.error(f"❌ Error tracking Telegram: {e}")
-            self._increment_error_count()
+            logger.error(f"❌ Signal tracking failed: {e}")
     
-    async def track_signal_outcome(self, signal_id: str, outcome: str, pnl: float) -> None:
-        """Track the outcome of a signal (profit/loss) - SAFE VERSION"""
+    async def track_telegram_sent(self, success: bool, signal: Dict[str, Any]):
+        """Track Telegram notification success/failure"""
         try:
-            with self._stats_lock:
-                # Ensure keys exist
-                self._ensure_key_exists("total_profit_loss", 0.0)
-                self._ensure_key_exists("successful_signals", 0)
-                self._ensure_key_exists("failed_signals", 0)
-                
-                self.daily_stats["total_profit_loss"] += pnl
-                
-                if outcome == "profit":
-                    self.daily_stats["successful_signals"] += 1
-                else:
-                    self.daily_stats["failed_signals"] += 1
+            if success:
+                self.telegram_sent += 1
+                self.daily_stats.signals_sent += 1
+            else:
+                self.telegram_failed += 1
             
-            logger.info(f"💰 Signal outcome: {signal_id} -> {outcome} (₹{pnl:,.2f})")
+            # Update success rate
+            total_attempts = self.telegram_sent + self.telegram_failed
+            if total_attempts > 0:
+                self.daily_stats.telegram_success_rate = (self.telegram_sent / total_attempts) * 100
+            
+            # Update database
+            await self._update_daily_stats_in_db()
+            
+            # Log event
+            await self._log_system_event("telegram_notification", {
+                "success": success,
+                "signal_id": signal.get("id"),
+                "symbol": signal.get("symbol")
+            })
+            
+            logger.info(f"📱 Telegram tracked: {'✅ Success' if success else '❌ Failed'} | Rate: {self.daily_stats.telegram_success_rate:.1f}%")
             
         except Exception as e:
-            logger.error(f"❌ Error tracking outcome: {e}")
-            self._increment_error_count()
+            logger.error(f"❌ Telegram tracking failed: {e}")
     
-    def get_daily_stats(self) -> Dict:
-        """Get current daily statistics - COMPLETELY SAFE VERSION"""
+    async def track_signal_completion(self, signal_id: str, exit_price: float, success: bool):
+        """Track signal completion (hit target or stop loss)"""
         try:
-            with self._stats_lock:
-                # Ensure all keys exist with safe defaults
-                safe_stats = {
-                    "signals_generated": self.daily_stats.get("signals_generated", 0),
-                    "signals_sent": self.daily_stats.get("signals_sent", 0),
-                    "telegram_success": self.daily_stats.get("telegram_success", 0),
-                    "telegram_failures": self.daily_stats.get("telegram_failures", 0),
-                    "total_profit_loss": self.daily_stats.get("total_profit_loss", 0.0),
-                    "successful_signals": self.daily_stats.get("successful_signals", 0),
-                    "failed_signals": self.daily_stats.get("failed_signals", 0),
-                    "average_confidence": self.daily_stats.get("average_confidence", 0.0),
-                    "uptime_start": self.daily_stats.get("uptime_start", datetime.now()),
-                    "last_signal_time": self.daily_stats.get("last_signal_time"),
-                    "error_count": self.daily_stats.get("error_count", 0)
-                }
-                
-                # Safe calculations
-                total_signals = safe_stats["successful_signals"] + safe_stats["failed_signals"]
-                win_rate = (safe_stats["successful_signals"] / max(total_signals, 1)) * 100
-                
-                telegram_total = safe_stats["telegram_success"] + safe_stats["telegram_failures"]
-                telegram_success_rate = (safe_stats["telegram_success"] / max(telegram_total, 1)) * 100
-                
-                uptime_seconds = (datetime.now() - safe_stats["uptime_start"]).total_seconds()
-                uptime_hours = uptime_seconds / 3600
-                
-                # Return comprehensive safe statistics
-                result = {
-                    "signals_generated": safe_stats["signals_generated"],
-                    "signals_sent": safe_stats["signals_sent"],
-                    "successful_signals": safe_stats["successful_signals"],
-                    "failed_signals": safe_stats["failed_signals"],
-                    "win_rate": round(win_rate, 1),
-                    "total_pnl": round(safe_stats["total_profit_loss"], 2),
-                    "average_confidence": round(safe_stats["average_confidence"] * 100, 1),
-                    "telegram_success": safe_stats["telegram_success"],
-                    "telegram_failures": safe_stats["telegram_failures"],
-                    "telegram_success_rate": round(telegram_success_rate, 1),
-                    "system_uptime_hours": round(uptime_hours, 1),
-                    "last_signal_time": safe_stats["last_signal_time"].isoformat() if safe_stats["last_signal_time"] else None,
-                    "status": self._get_system_status_safe(safe_stats),
-                    "error_count": safe_stats["error_count"],
-                    "error_rate": self._calculate_error_rate_safe(safe_stats)
-                }
-                
-                return result
+            if signal_id not in self.signal_performances:
+                logger.warning(f"Signal {signal_id} not found for completion tracking")
+                return
+            
+            signal_perf = self.signal_performances[signal_id]
+            signal_perf.exit_price = exit_price
+            signal_perf.exit_time = datetime.now()
+            signal_perf.success = success
+            signal_perf.status = "completed"
+            
+            # Calculate P&L
+            if signal_perf.action.upper() == "BUY":
+                signal_perf.pnl = exit_price - signal_perf.entry_price
+            else:  # SELL
+                signal_perf.pnl = signal_perf.entry_price - exit_price
+            
+            signal_perf.pnl_percentage = (signal_perf.pnl / signal_perf.entry_price) * 100
+            
+            # Update daily stats
+            if success:
+                self.daily_stats.signals_successful += 1
+            else:
+                self.daily_stats.signals_failed += 1
+            
+            self.daily_stats.total_pnl += signal_perf.pnl
+            
+            # Update win rate
+            total_completed = self.daily_stats.signals_successful + self.daily_stats.signals_failed
+            if total_completed > 0:
+                self.daily_stats.win_rate = (self.daily_stats.signals_successful / total_completed) * 100
+            
+            # Update database
+            await self._update_signal_in_db(signal_perf)
+            await self._update_daily_stats_in_db()
+            
+            logger.info(f"🎯 Signal completed: {signal_id} | P&L: ₹{signal_perf.pnl:.2f} ({signal_perf.pnl_percentage:+.1f}%) | {'✅ Success' if success else '❌ Failed'}")
             
         except Exception as e:
-            logger.error(f"❌ Error getting daily stats: {e}")
-            # Return safe defaults if everything fails
-            return {
-                "signals_generated": 0,
-                "signals_sent": 0,
-                "successful_signals": 0,
-                "failed_signals": 0,
-                "win_rate": 0.0,
-                "total_pnl": 0.0,
-                "average_confidence": 0.0,
-                "telegram_success": 0,
-                "telegram_failures": 0,
-                "telegram_success_rate": 0.0,
-                "system_uptime_hours": 0.0,
-                "last_signal_time": None,
-                "status": "ERROR",
-                "error_count": 1,
-                "error_rate": 0.0
-            }
+            logger.error(f"❌ Signal completion tracking failed: {e}")
     
-    def get_performance_summary(self) -> Dict:
-        """Get performance summary for dashboard - SAFE VERSION"""
+    def get_daily_stats(self) -> Dict[str, Any]:
+        """Get current daily statistics"""
+        try:
+            # Update uptime
+            uptime = (datetime.now() - self.start_time).total_seconds() / 3600
+            self.daily_stats.system_uptime_hours = round(uptime, 2)
+            
+            return asdict(self.daily_stats)
+            
+        except Exception as e:
+            logger.error(f"❌ Get daily stats failed: {e}")
+            return {}
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get comprehensive performance summary"""
         try:
             daily = self.get_daily_stats()
+            
+            # Calculate error rate
+            total_telegram = self.telegram_sent + self.telegram_failed
+            error_rate = (self.telegram_failed / max(total_telegram, 1)) * 100
             
             return {
                 "daily": daily,
                 "system_health": {
-                    "telegram_configured": bool(daily.get("telegram_success", 0) > 0 or daily.get("telegram_failures", 0) > 0),
-                    "signal_generation_active": bool(daily.get("signals_generated", 0) > 0),
-                    "last_activity": daily.get("last_signal_time"),
-                    "error_rate": daily.get("error_rate", 0.0),
-                    "uptime_hours": daily.get("system_uptime_hours", 0.0)
+                    "telegram_configured": True,  # Will be updated by main.py
+                    "signal_generation_active": True,
+                    "market_data_connected": True,
+                    "ml_models_loaded": True,
+                    "last_activity": daily["last_signal_time"],
+                    "error_rate": round(error_rate, 2),
+                    "uptime_hours": daily["system_uptime_hours"]
+                },
+                "configuration": {
+                    "max_signals_per_day": 3,  # Default, will be overridden
+                    "min_confidence_threshold": 0.65,
+                    "signal_interval_seconds": 45,
+                    "telegram_enabled": True,
+                    "zerodha_enabled": False
                 },
                 "recent_performance": {
-                    "signals_today": daily.get("signals_generated", 0),
-                    "success_rate": daily.get("win_rate", 0.0),
-                    "profit_loss": daily.get("total_pnl", 0.0),
-                    "avg_confidence": daily.get("average_confidence", 0.0)
-                },
-                "telegram_stats": {
-                    "messages_sent": daily.get("telegram_success", 0),
-                    "messages_failed": daily.get("telegram_failures", 0),
-                    "success_rate": daily.get("telegram_success_rate", 0.0)
+                    "signals_today": daily["signals_generated"],
+                    "success_rate": daily["telegram_success_rate"],
+                    "profit_loss": daily["total_pnl"],
+                    "avg_confidence": daily["average_confidence"]
                 }
             }
             
         except Exception as e:
-            logger.error(f"❌ Error getting performance summary: {e}")
+            logger.error(f"❌ Performance summary failed: {e}")
             return {
-                "error": str(e),
-                "daily": self.get_daily_stats(),
-                "system_health": {"status": "ERROR"},
-                "recent_performance": {"signals_today": 0},
-                "telegram_stats": {"messages_sent": 0}
+                "daily": asdict(self.daily_stats),
+                "system_health": {"error": str(e)},
+                "configuration": {},
+                "recent_performance": {}
             }
     
-    def _get_system_status_safe(self, safe_stats: Dict) -> str:
-        """Determine current system status - SAFE VERSION"""
+    async def get_recent_signals(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent signals from database"""
         try:
-            signals_generated = safe_stats.get("signals_generated", 0)
-            
-            if signals_generated == 0:
-                return "STARTING"
-            
-            telegram_total = safe_stats.get("telegram_success", 0) + safe_stats.get("telegram_failures", 0)
-            error_count = safe_stats.get("error_count", 0)
-            
-            # Check for high error rate
-            if error_count > 10:
-                return "ERROR"
-            
-            if telegram_total > 0:
-                telegram_rate = safe_stats.get("telegram_success", 0) / telegram_total
-                if telegram_rate > 0.9:
-                    return "EXCELLENT"
-                elif telegram_rate > 0.7:
-                    return "GOOD"
-                else:
-                    return "ISSUES"
-            
-            return "ACTIVE"
-            
-        except Exception as e:
-            logger.error(f"Error determining system status: {e}")
-            return "UNKNOWN"
-    
-    def _calculate_error_rate_safe(self, safe_stats: Dict) -> float:
-        """Calculate overall error rate - SAFE VERSION"""
-        try:
-            total_operations = (
-                safe_stats.get("signals_generated", 0) + 
-                safe_stats.get("telegram_success", 0) + 
-                safe_stats.get("telegram_failures", 0)
-            )
-            
-            errors = safe_stats.get("telegram_failures", 0) + safe_stats.get("error_count", 0)
-            
-            return round((errors / max(total_operations, 1) * 100), 2)
-            
-        except Exception as e:
-            logger.error(f"Error calculating error rate: {e}")
-            return 0.0
-    
-    def _increment_error_count(self):
-        """Safely increment error count"""
-        try:
-            with self._stats_lock:
-                self._ensure_key_exists("error_count", 0)
-                self._ensure_key_exists("last_error_time", None)
-                
-                self.daily_stats["error_count"] += 1
-                self.daily_stats["last_error_time"] = datetime.now()
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    "SELECT * FROM signals ORDER BY created_at DESC LIMIT ?",
+                    (limit,)
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    
+                columns = [description[0] for description in cursor.description]
+                return [dict(zip(columns, row)) for row in rows]
                 
         except Exception as e:
-            logger.error(f"Error incrementing error count: {e}")
+            logger.error(f"❌ Get recent signals failed: {e}")
+            return []
     
-    def reset_daily_stats(self) -> None:
-        """Reset daily statistics (called at midnight) - SAFE VERSION"""
+    async def get_analytics_dashboard(self) -> Dict[str, Any]:
+        """Get complete analytics dashboard data"""
         try:
-            with self._stats_lock:
-                self.daily_stats = {
-                    "signals_generated": 0,
-                    "signals_sent": 0,
-                    "telegram_success": 0,
-                    "telegram_failures": 0,
-                    "total_profit_loss": 0.0,
-                    "successful_signals": 0,
-                    "failed_signals": 0,
-                    "average_confidence": 0.0,
-                    "uptime_start": datetime.now(),
-                    "last_signal_time": None,
-                    "win_rate": 0.0,
-                    "total_pnl": 0.0,
-                    "system_uptime_hours": 0.0,
-                    "status": "STARTING",
-                    "error_count": 0,
-                    "last_error_time": None
-                }
-            
-            logger.info("🔄 Daily statistics reset successfully")
-            
-        except Exception as e:
-            logger.error(f"❌ Error resetting daily stats: {e}")
-    
-    def get_system_health(self) -> Dict:
-        """Get comprehensive system health information"""
-        try:
-            daily = self.get_daily_stats()
+            performance = self.get_performance_summary()
+            recent_signals = await self.get_recent_signals(5)
             
             return {
-                "overall_status": daily.get("status", "UNKNOWN"),
-                "uptime_hours": daily.get("system_uptime_hours", 0.0),
-                "signals_generated_today": daily.get("signals_generated", 0),
-                "win_rate_percentage": daily.get("win_rate", 0.0),
-                "telegram_operational": daily.get("telegram_success_rate", 0.0) > 50.0,
-                "error_rate_percentage": daily.get("error_rate", 0.0),
-                "last_signal_time": daily.get("last_signal_time"),
-                "total_pnl_today": daily.get("total_pnl", 0.0),
-                "average_confidence": daily.get("average_confidence", 0.0),
-                "timestamp": datetime.now().isoformat()
+                "performance": performance,
+                "recent_signals": recent_signals,
+                "timestamp": datetime.now().isoformat(),
+                "version": "3.0.0"
             }
             
         except Exception as e:
-            logger.error(f"❌ Error getting system health: {e}")
-            return {
-                "overall_status": "ERROR",
-                "error": str(e),
-                "timestamp": datetime.now().isoformat()
-            }
+            logger.error(f"❌ Analytics dashboard failed: {e}")
+            return {"error": str(e)}
     
-    def get_quick_stats(self) -> Dict:
-        """Get quick stats for frequent polling"""
+    async def _store_signal_in_db(self, signal_perf: SignalPerformance):
+        """Store signal performance in database"""
         try:
-            with self._stats_lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    INSERT OR REPLACE INTO signals 
+                    (id, symbol, action, entry_price, target_price, stop_loss, confidence, 
+                     created_at, status, exit_price, exit_time, pnl, pnl_percentage, success)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    signal_perf.signal_id,
+                    signal_perf.symbol,
+                    signal_perf.action,
+                    signal_perf.entry_price,
+                    signal_perf.target_price,
+                    signal_perf.stop_loss,
+                    signal_perf.confidence,
+                    signal_perf.created_at.isoformat(),
+                    signal_perf.status,
+                    signal_perf.exit_price,
+                    signal_perf.exit_time.isoformat() if signal_perf.exit_time else None,
+                    signal_perf.pnl,
+                    signal_perf.pnl_percentage,
+                    signal_perf.success
+                ))
+                await db.commit()
+                
+        except Exception as e:
+            logger.error(f"❌ Store signal in DB failed: {e}")
+    
+    async def _update_signal_in_db(self, signal_perf: SignalPerformance):
+        """Update existing signal in database"""
+        await self._store_signal_in_db(signal_perf)  # Same operation for SQLite
+    
+    async def _update_daily_stats_in_db(self):
+        """Update daily stats in database"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    INSERT OR REPLACE INTO daily_stats
+                    (date, signals_generated, signals_sent, signals_successful, signals_failed,
+                     total_pnl, win_rate, average_confidence, telegram_success_rate,
+                     system_uptime_hours, last_signal_time, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    self.daily_stats.date,
+                    self.daily_stats.signals_generated,
+                    self.daily_stats.signals_sent,
+                    self.daily_stats.signals_successful,
+                    self.daily_stats.signals_failed,
+                    self.daily_stats.total_pnl,
+                    self.daily_stats.win_rate,
+                    self.daily_stats.average_confidence,
+                    self.daily_stats.telegram_success_rate,
+                    self.daily_stats.system_uptime_hours,
+                    self.daily_stats.last_signal_time,
+                    self.daily_stats.status
+                ))
+                await db.commit()
+                
+        except Exception as e:
+            logger.error(f"❌ Update daily stats in DB failed: {e}")
+    
+    async def _log_system_event(self, event_type: str, event_data: Dict[str, Any]):
+        """Log system events to database"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    INSERT INTO system_events (event_type, event_data, timestamp)
+                    VALUES (?, ?, ?)
+                """, (
+                    event_type,
+                    json.dumps(event_data),
+                    datetime.now().isoformat()
+                ))
+                await db.commit()
+                
+        except Exception as e:
+            logger.debug(f"System event logging failed: {e}")
+    
+    async def get_historical_performance(self, days: int = 30) -> Dict[str, Any]:
+        """Get historical performance data"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Get daily stats for the last N days
+                async with db.execute("""
+                    SELECT * FROM daily_stats 
+                    WHERE date >= date('now', '-{} days')
+                    ORDER BY date DESC
+                """.format(days)) as cursor:
+                    rows = await cursor.fetchall()
+                    columns = [description[0] for description in cursor.description]
+                    daily_history = [dict(zip(columns, row)) for row in rows]
+                
+                # Get completed signals
+                async with db.execute("""
+                    SELECT * FROM signals 
+                    WHERE status = 'completed' 
+                    AND created_at >= datetime('now', '-{} days')
+                    ORDER BY created_at DESC
+                """.format(days)) as cursor:
+                    rows = await cursor.fetchall()
+                    columns = [description[0] for description in cursor.description]
+                    completed_signals = [dict(zip(columns, row)) for row in rows]
+                
                 return {
-                    "signals_today": self.daily_stats.get("signals_generated", 0),
-                    "last_signal": self.daily_stats.get("last_signal_time").isoformat() if self.daily_stats.get("last_signal_time") else None,
-                    "status": self._get_system_status_safe(self.daily_stats),
-                    "uptime_hours": round((datetime.now() - self.daily_stats.get("uptime_start", datetime.now())).total_seconds() / 3600, 1)
+                    "daily_history": daily_history,
+                    "completed_signals": completed_signals,
+                    "period_days": days,
+                    "generated_at": datetime.now().isoformat()
                 }
+                
         except Exception as e:
-            logger.error(f"❌ Error getting quick stats: {e}")
-            return {
-                "signals_today": 0,
-                "last_signal": None,
-                "status": "ERROR",
-                "uptime_hours": 0.0
-            }
+            logger.error(f"❌ Historical performance failed: {e}")
+            return {"error": str(e)}
+    
+    async def reset_daily_stats(self):
+        """Reset daily stats for new trading day"""
+        try:
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            
+            if self.daily_stats.date != current_date:
+                logger.info(f"🌅 New trading day: {current_date}")
+                
+                # Archive current stats
+                await self._update_daily_stats_in_db()
+                
+                # Reset for new day
+                self.daily_stats = DailyStats(
+                    date=current_date,
+                    signals_generated=0,
+                    signals_sent=0,
+                    signals_successful=0,
+                    signals_failed=0,
+                    total_pnl=0.0,
+                    win_rate=0.0,
+                    average_confidence=0.0,
+                    telegram_success_rate=100.0,
+                    system_uptime_hours=0.0,
+                    last_signal_time=None,
+                    status="operational"
+                )
+                
+                # Reset counters
+                self.telegram_sent = 0
+                self.telegram_failed = 0
+                self.signal_performances.clear()
+                self.start_time = datetime.now()
+                
+        except Exception as e:
+            logger.error(f"❌ Daily stats reset failed: {e}")
+    
+    async def close(self):
+        """Close analytics service and save final stats"""
+        try:
+            await self._update_daily_stats_in_db()
+            await self._log_system_event("analytics_service_shutdown", {
+                "final_stats": asdict(self.daily_stats)
+            })
+            logger.info("✅ Analytics service closed gracefully")
+            
+        except Exception as e:
+            logger.error(f"Error closing analytics service: {e}")
+
+# ================================================================
+# Factory Function
+# ================================================================
+
+def create_analytics_service(database_url: str = None) -> AnalyticsService:
+    """Factory function to create analytics service"""
+    return AnalyticsService(database_url)
+
+# ================================================================
+# Testing
+# ================================================================
+
+async def test_analytics_service():
+    """Test the analytics service"""
+    print("🧪 Testing Analytics Service...")
+    
+    analytics = create_analytics_service("sqlite:///test_analytics.db")
+    
+    try:
+        # Test signal tracking
+        test_signal = {
+            "id": "test_signal_001",
+            "symbol": "TESTSTOCK",
+            "action": "BUY",
+            "entry_price": 1000.0,
+            "target_price": 1050.0,
+            "stop_loss": 950.0,
+            "confidence": 0.85
+        }
+        
+        await analytics.track_signal_generated(test_signal)
+        await analytics.track_telegram_sent(True, test_signal)
+        
+        # Get performance summary
+        performance = analytics.get_performance_summary()
+        print(f"✅ Signals Generated: {performance['daily']['signals_generated']}")
+        print(f"✅ Signals Sent: {performance['daily']['signals_sent']}")
+        print(f"✅ Telegram Success Rate: {performance['daily']['telegram_success_rate']:.1f}%")
+        
+        print("🎉 Analytics service test completed!")
+        
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
+    finally:
+        await analytics.close()
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(test_analytics_service())

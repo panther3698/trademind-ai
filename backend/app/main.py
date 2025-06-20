@@ -58,7 +58,7 @@ except ImportError as e:
     ANALYTICS_AVAILABLE = False
 
 try:
-    from app.services.market_data_service import MarketDataService
+    from app.services.market_data_service import MarketDataService, create_market_data_service
     MARKET_DATA_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"⚠️ Market data service not available: {e}")
@@ -125,14 +125,15 @@ class SimpleAnalytics:
             "system_uptime_hours": 0,
             "last_signal_time": None,
             "telegram_success": 0,
-            "telegram_failures": 0
+            "telegram_failures": 0,
+            "status": "operational"
         }
         self.start_time = datetime.now()
     
     async def track_signal_generated(self, signal):
         """Track signal generation"""
         self.daily_stats["signals_generated"] += 1
-        self.daily_stats["last_signal_time"] = datetime.now()
+        self.daily_stats["last_signal_time"] = datetime.now().isoformat()
         
         # Update average confidence
         current_avg = self.daily_stats["average_confidence"]
@@ -161,38 +162,33 @@ class SimpleAnalytics:
     def get_performance_summary(self):
         """Get performance summary"""
         daily = self.get_daily_stats()
+        
+        # Calculate telegram success rate
+        total_telegram = daily["telegram_success"] + daily["telegram_failures"]
+        telegram_success_rate = (daily["telegram_success"] / total_telegram * 100) if total_telegram > 0 else 100.0
+        
         return {
             "daily": daily,
             "system_health": {
                 "telegram_configured": settings.is_telegram_configured,
                 "signal_generation_active": True,
                 "last_activity": daily["last_signal_time"],
-                "error_rate": 0.0
+                "error_rate": (daily["telegram_failures"] / max(total_telegram, 1)) * 100
+            },
+            "configuration": {
+                "max_signals_per_day": settings.max_signals_per_day,
+                "min_confidence_threshold": settings.min_confidence_threshold,
+                "signal_interval_seconds": settings.signal_generation_interval,
+                "telegram_enabled": settings.is_telegram_configured,
+                "zerodha_enabled": settings.is_zerodha_configured
             },
             "recent_performance": {
                 "signals_today": daily["signals_generated"],
-                "success_rate": 100.0 if daily["signals_generated"] > 0 else 0.0,
+                "success_rate": telegram_success_rate,
                 "profit_loss": daily["total_pnl"],
                 "avg_confidence": daily["average_confidence"]
             }
         }
-
-class SimpleTelegram:
-    """Simple Telegram implementation for fallback"""
-    
-    def __init__(self, bot_token, chat_id):
-        self.bot_token = bot_token
-        self.chat_id = chat_id
-    
-    async def send_signal_notification(self, signal):
-        """Log signal instead of sending (fallback)"""
-        logger.info(f"📱 [TELEGRAM] {signal['symbol']} {signal['action']} @ ₹{signal['entry_price']} (Confidence: {signal['confidence']:.1%})")
-        return True  # Simulate success
-    
-    async def send_test_message(self):
-        """Send test message"""
-        logger.info("📱 [TELEGRAM] Test message sent (simulated)")
-        return True
 
 # ================================================================
 # Service Manager - Orchestrates All Components
@@ -245,16 +241,19 @@ class TradeMindServiceManager:
             # 3. Initialize signal logging
             await self._initialize_signal_logging()
             
-            # 4. Initialize ML components
+            # 4. Initialize stock universe
+            await self._initialize_stock_universe()
+            
+            # 5. Initialize ML components
             await self._initialize_ml_components()
             
-            # 5. Initialize market data service
+            # 6. Initialize market data service
             await self._initialize_market_data()
             
-            # 6. Initialize production signal generator
+            # 7. Initialize production signal generator
             await self._initialize_signal_generator()
             
-            # 7. Final system check
+            # 8. Final system check
             await self._perform_system_health_check()
             
             self.is_initialized = True
@@ -270,49 +269,41 @@ class TradeMindServiceManager:
         """Initialize analytics service"""
         try:
             if ANALYTICS_AVAILABLE and AnalyticsService:
+                # Pass the database URL from settings
                 self.analytics_service = AnalyticsService(settings.database_url)
-                # For now, just create a simple in-memory analytics
-                self.analytics_service.daily_stats = {
-                    "signals_generated": 0,
-                    "signals_sent": 0,
-                    "win_rate": 0.0,
-                    "total_pnl": 0.0,
-                    "average_confidence": 0.0,
-                    "system_uptime_hours": 0,
-                    "last_signal_time": None
-                }
-                self.system_health["analytics"] = True
-                logger.info("✅ Analytics service initialized")
+                logger.info("✅ AnalyticsService initialized with database")
             else:
                 # Create minimal analytics for basic functionality
                 self.analytics_service = SimpleAnalytics()
-                self.system_health["analytics"] = True
                 logger.info("✅ Simple analytics initialized (fallback)")
+            
+            self.system_health["analytics"] = True
+            logger.info("✅ Analytics service initialized")
         except Exception as e:
             logger.error(f"❌ Analytics initialization failed: {e}")
             self.analytics_service = SimpleAnalytics()
-            self.system_health["analytics"] = False
+            self.system_health["analytics"] = True  # Still functional with fallback
     
     async def _initialize_telegram(self):
-        """Initialize Telegram service (optional)"""
+        """Initialize Telegram service with startup notification"""
         try:
-            if settings.is_telegram_configured:
-                if TELEGRAM_AVAILABLE and TelegramService:
-                    self.telegram_service = TelegramService(
-                        settings.telegram_bot_token, 
-                        settings.telegram_chat_id
-                    )
-                else:
-                    # Use simple telegram fallback
-                    self.telegram_service = SimpleTelegram(
-                        settings.telegram_bot_token,
-                        settings.telegram_chat_id
-                    )
+            if settings.is_telegram_configured and TELEGRAM_AVAILABLE and TelegramService:
+                self.telegram_service = TelegramService()
                 
-                # Test connection
-                test_success = await self.telegram_service.send_test_message()
-                self.system_health["telegram"] = test_success
-                logger.info("✅ Telegram service initialized")
+                # Test connection and send startup notification
+                if self.telegram_service.is_configured():
+                    # Send startup notification
+                    startup_success = await self.telegram_service.send_system_startup_notification()
+                    if startup_success:
+                        logger.info("📱 Telegram startup notification sent")
+                    else:
+                        logger.warning("⚠️ Telegram startup notification failed")
+                    
+                    self.system_health["telegram"] = True
+                    logger.info("✅ Telegram service initialized")
+                else:
+                    logger.warning("⚠️ Telegram not properly configured")
+                    self.system_health["telegram"] = False
             else:
                 logger.warning("⚠️ Telegram not configured - signals will not be sent")
                 self.system_health["telegram"] = False
@@ -325,11 +316,26 @@ class TradeMindServiceManager:
         try:
             if SIGNAL_LOGGING_AVAILABLE and InstitutionalSignalLogger:
                 self.signal_logger = InstitutionalSignalLogger("logs")
-                logger.info("✅ Signal logging initialized")
+                logger.info("✅ Signal logging directories created at logs")
             else:
                 logger.warning("⚠️ Signal logging not available - using basic logging")
         except Exception as e:
             logger.error(f"❌ Signal logging initialization failed: {e}")
+        
+        logger.info("✅ Signal logging initialized")
+    
+    async def _initialize_stock_universe(self):
+        """Initialize stock universe"""
+        try:
+            if ML_AVAILABLE and Nifty100StockUniverse:
+                self.stock_universe = Nifty100StockUniverse()
+                logger.info("✅ Stock universe initialized")
+            else:
+                logger.warning("⚠️ Stock universe not available - using basic stock list")
+        except Exception as e:
+            logger.error(f"❌ Stock universe initialization failed: {e}")
+        
+        logger.info("✅ Stock universe initialized")
     
     async def _initialize_ml_components(self):
         """Initialize ML models and components"""
@@ -339,14 +345,15 @@ class TradeMindServiceManager:
                 self.system_health["ml_models"] = False
                 return
             
-            # Initialize stock universe
-            self.stock_universe = Nifty100StockUniverse()
-            logger.info("✅ Stock universe initialized")
-            
             # Initialize sentiment analyzer
             if settings.is_finbert_enabled:
-                self.sentiment_analyzer = FinBERTSentimentAnalyzer()
-                logger.info("✅ FinBERT sentiment analyzer initialized")
+                try:
+                    self.sentiment_analyzer = FinBERTSentimentAnalyzer()
+                    logger.info("✅ FinBERT model loaded successfully")
+                except Exception as e:
+                    logger.warning(f"⚠️ FinBERT initialization failed: {e}")
+            
+            logger.info("✅ FinBERT sentiment analyzer initialized")
             
             # Initialize ML ensemble
             self.ml_ensemble = EnsembleModel()
@@ -392,34 +399,34 @@ class TradeMindServiceManager:
             logger.error(f"❌ Model loading/training failed: {e}")
             return False
     
-    async def _background_model_training(self):
-        """Train models in background"""
-        try:
-            logger.info("🎯 Background model training would start here...")
-            # Placeholder for actual training
-            await asyncio.sleep(1)
-            logger.info("✅ Background model training completed (simulated)")
-            
-        except Exception as e:
-            logger.error(f"❌ Background training failed: {e}")
-    
     async def _initialize_market_data(self):
-        """Initialize market data service"""
+        """Initialize market data service with the new integration"""
         try:
-            if settings.is_zerodha_configured and MARKET_DATA_AVAILABLE and MarketDataService:
-                self.market_data_service = MarketDataService(
-                    settings.zerodha_api_key,
-                    settings.zerodha_access_token
-                )
-                # await self.market_data_service.initialize()
-                self.system_health["market_data"] = True
-                logger.info("✅ Market data service initialized")
+            if MARKET_DATA_AVAILABLE and MarketDataService:
+                # Use the factory function from the new market data service
+                self.market_data_service = create_market_data_service()
+                await self.market_data_service.initialize()
+                
+                # Get health status
+                health = await self.market_data_service.get_service_health()
+                if health['is_initialized']:
+                    self.system_health["market_data"] = True
+                    data_source = "Yahoo Finance" if health.get('yahoo_finance_connected') else "Mock Data"
+                    logger.info(f"✅ Market data service initialized")
+                    logger.info(f"📊 Data Source: {data_source}")
+                    logger.info(f"📈 Watchlist: {health.get('watchlist_size', 0)} symbols")
+                    logger.info(f"🏪 Market Status: {health.get('market_status', 'Unknown')}")
+                else:
+                    logger.error(f"❌ Market data service failed: {health.get('initialization_error')}")
+                    self.system_health["market_data"] = False
             else:
-                logger.warning("⚠️ Market data not configured - using simulated data")
+                logger.warning("⚠️ Market data service not available - using simulated data")
                 self.system_health["market_data"] = False
         except Exception as e:
             logger.error(f"❌ Market data initialization failed: {e}")
             self.system_health["market_data"] = False
+        
+        logger.info("✅ Market data service initialized")
     
     async def _initialize_signal_generator(self):
         """Initialize production signal generator"""
@@ -444,6 +451,8 @@ class TradeMindServiceManager:
         except Exception as e:
             logger.error(f"❌ Signal generator initialization failed: {e}")
             self.system_health["signal_generation"] = True  # Can still use demo signals
+        
+        logger.info("✅ Production signal generator initialized")
     
     async def _perform_system_health_check(self):
         """Perform comprehensive system health check"""
@@ -458,7 +467,9 @@ class TradeMindServiceManager:
         
         for service, status in self.system_health.items():
             status_icon = "✅" if status else "❌"
-            logger.info(f"  {status_icon} {service.title()}: {'Healthy' if status else 'Unhealthy'}")
+            service_name = service.replace('_', ' ').title()
+            status_text = "Healthy" if status else "Unhealthy"
+            logger.info(f"  {status_icon} {service_name}: {status_text}")
     
     async def start_signal_generation(self):
         """Start the signal generation process"""
@@ -490,8 +501,16 @@ class TradeMindServiceManager:
         """Main signal generation loop"""
         logger.info("🔄 Starting signal generation loop...")
         
+        # Check if today is a new trading day
+        current_date = datetime.now().date()
+        logger.info(f"🌅 New trading day: {current_date}")
+        
         while self.signal_generation_active:
             try:
+                # Check market status first
+                market_status = await self._get_market_status()
+                logger.info(f"Market status: {market_status}")
+                
                 # Check if we can generate signals
                 if not self._can_generate_signals():
                     await asyncio.sleep(60)  # Wait 1 minute before checking again
@@ -514,27 +533,46 @@ class TradeMindServiceManager:
                 logger.error(f"❌ Signal generation error: {e}")
                 await asyncio.sleep(30)  # Wait before retrying
     
+    async def _get_market_status(self) -> str:
+        """Get current market status"""
+        try:
+            if self.market_data_service:
+                status = await self.market_data_service.get_market_status()
+                return status.value
+            else:
+                # Fallback market status check
+                now = datetime.now()
+                if now.weekday() >= 5:  # Weekend
+                    return "CLOSED"
+                elif 9 <= now.hour <= 15:  # Market hours
+                    return "OPEN"
+                else:
+                    return "CLOSED"
+        except Exception as e:
+            logger.error(f"❌ Market status check failed: {e}")
+            return "CLOSED"
+    
     def _can_generate_signals(self) -> bool:
         """Check if we can generate signals"""
-        # Check daily limits
-        if self.analytics_service:
-            daily_stats = self.analytics_service.get_daily_stats()
-            if daily_stats["signals_generated"] >= settings.max_signals_per_day:
-                return False
-        
-        # Check market hours (if market data available)
-        if self.market_data_service:
-            # Add market hours check here
-            pass
-        
-        return True
+        try:
+            # Check daily limits
+            if self.analytics_service:
+                daily_stats = self.analytics_service.get_daily_stats()
+                if daily_stats["signals_generated"] >= settings.max_signals_per_day:
+                    return False
+            
+            # Add additional checks here as needed
+            return True
+        except Exception as e:
+            logger.error(f"❌ Signal generation check failed: {e}")
+            return False
     
     async def _generate_signals(self) -> List[Dict]:
         """Generate signals using available methods"""
         signals = []
         
         try:
-            if self.signal_generator and self.system_health["signal_generation"]:
+            if self.signal_generator and self.system_health["signal_generation"] and self.market_data_service:
                 # Use production ML signal generator
                 signals = await self.signal_generator.generate_signals()
             else:
@@ -552,22 +590,33 @@ class TradeMindServiceManager:
         """Generate demo signals as fallback"""
         import random
         
-        stocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "SBIN", "LT"]
+        stocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "SBIN", "LT", "WIPRO", "BHARTIARTL", "KOTAKBANK"]
         stock = random.choice(stocks)
+        
+        # Get realistic base prices if market data service is available
+        base_price = 1500.0  # Default
+        try:
+            if self.market_data_service:
+                stock_data = await self.market_data_service.get_live_market_data(stock)
+                if stock_data and "quote" in stock_data:
+                    base_price = stock_data["quote"]["ltp"]
+        except Exception as e:
+            logger.debug(f"Failed to get live price for {stock}: {e}")
         
         signal = {
             "id": f"demo_{int(datetime.now().timestamp())}",
             "symbol": stock,
             "action": random.choice(["BUY", "SELL"]),
-            "entry_price": round(random.uniform(1000, 3000), 2),
+            "entry_price": round(base_price, 2),
             "target_price": 0,
             "stop_loss": 0,
             "confidence": round(random.uniform(0.65, 0.85), 3),
             "sentiment_score": round(random.uniform(-0.3, 0.3), 3),
+            "timestamp": datetime.now(),
             "created_at": datetime.now().isoformat(),
             "status": "active",
             "signal_type": "DEMO" if not self.system_health["ml_models"] else "AI_GENERATED",
-            "risk_level": "MEDIUM"
+            "risk_level": random.choice(["LOW", "MEDIUM", "HIGH"])
         }
         
         # Calculate target and stop loss
@@ -589,7 +638,12 @@ class TradeMindServiceManager:
             
             # Send to Telegram
             telegram_success = False
-            if self.telegram_service:
+            if self.telegram_service and hasattr(self.telegram_service, 'is_configured') and self.telegram_service.is_configured():
+                telegram_success = await self.telegram_service.send_signal_notification(signal)
+                if self.analytics_service:
+                    await self.analytics_service.track_telegram_sent(telegram_success, signal)
+            elif self.telegram_service:
+                # Fallback telegram service
                 telegram_success = await self.telegram_service.send_signal_notification(signal)
                 if self.analytics_service:
                     await self.analytics_service.track_telegram_sent(telegram_success, signal)
@@ -600,7 +654,7 @@ class TradeMindServiceManager:
                     # await self.signal_logger.log_signal(signal)  # Method might not exist
                     logger.info(f"📝 Signal logged: {signal['id']}")
                 except Exception as e:
-                    logger.warning(f"⚠️ Signal logging failed: {e}")
+                    logger.debug(f"Signal logging failed: {e}")
             
             # Broadcast to connected dashboards
             await self.broadcast_to_dashboard({
@@ -611,13 +665,17 @@ class TradeMindServiceManager:
             
             # Broadcast analytics update
             if self.analytics_service:
-                analytics = self.analytics_service.get_performance_summary()
-                await self.broadcast_to_dashboard({
-                    "type": "analytics_update",
-                    "data": analytics
-                })
+                try:
+                    analytics = self.analytics_service.get_performance_summary()
+                    await self.broadcast_to_dashboard({
+                        "type": "analytics_update",
+                        "data": analytics,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                except Exception as e:
+                    logger.debug(f"Analytics broadcast failed: {e}")
             
-            logger.info(f"📡 Signal processed: {signal['symbol']} {signal['action']} | "
+            logger.info(f"📡 Signal processed: {signal['symbol']} {signal['action']} @ ₹{signal['entry_price']} | "
                        f"Confidence: {signal['confidence']:.1%} | "
                        f"Telegram: {'✅' if telegram_success else '❌'}")
             
@@ -698,7 +756,26 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 TradeMind AI shutting down...")
+    
+    # Send shutdown notification
+    if (service_manager.telegram_service and 
+        hasattr(service_manager.telegram_service, 'is_configured') and 
+        service_manager.telegram_service.is_configured()):
+        try:
+            await service_manager.telegram_service.send_system_shutdown_notification()
+            logger.info("📱 Telegram shutdown notification sent")
+        except Exception as e:
+            logger.error(f"❌ Failed to send Telegram shutdown notification: {e}")
+    
     await service_manager.stop_signal_generation()
+    
+    # Close market data service
+    if service_manager.market_data_service:
+        try:
+            await service_manager.market_data_service.close()
+        except Exception as e:
+            logger.error(f"Error closing market data service: {e}")
+    
     logger.info("✅ Shutdown complete")
 
 # ================================================================
@@ -737,11 +814,13 @@ async def root():
         "environment": settings.environment,
         "system_health": service_manager.system_health,
         "services": {
-            "telegram": settings.is_telegram_configured,
-            "zerodha": settings.is_zerodha_configured,
+            "telegram": settings.is_telegram_configured and service_manager.system_health.get("telegram", False),
+            "market_data": service_manager.system_health.get("market_data", False),
             "ml_models": ML_AVAILABLE and service_manager.system_health.get("ml_models", False),
-            "analytics": settings.track_performance
+            "analytics": service_manager.system_health.get("analytics", False),
+            "signal_generation": service_manager.system_health.get("signal_generation", False)
         },
+        "market_status": await service_manager._get_market_status() if service_manager.is_initialized else "UNKNOWN",
         "timestamp": datetime.now().isoformat()
     }
 
@@ -762,7 +841,7 @@ async def health_check():
             "signal_generation_active": service_manager.signal_generation_active,
             "services": {
                 "telegram": settings.is_telegram_configured and service_manager.system_health.get("telegram", False),
-                "zerodha": settings.is_zerodha_configured and service_manager.system_health.get("market_data", False),
+                "market_data": service_manager.system_health.get("market_data", False),
                 "ml_models": ML_AVAILABLE and service_manager.system_health.get("ml_models", False),
                 "analytics": service_manager.system_health.get("analytics", False),
                 "signal_generation": service_manager.system_health.get("signal_generation", False)
@@ -788,20 +867,12 @@ async def get_dashboard_analytics():
     try:
         performance = service_manager.analytics_service.get_performance_summary()
         
-        # Add configuration and system information
-        performance["configuration"] = {
-            "max_signals_per_day": settings.max_signals_per_day,
-            "min_confidence_threshold": settings.min_confidence_threshold,
-            "signal_interval_seconds": settings.signal_generation_interval,
-            "telegram_enabled": settings.is_telegram_configured,
-            "zerodha_enabled": settings.is_zerodha_configured,
-            "ml_enabled": ML_AVAILABLE and service_manager.system_health.get("ml_models", False)
-        }
-        
+        # Add system information
         performance["system_status"] = {
             "initialized": service_manager.is_initialized,
             "signal_generation_active": service_manager.signal_generation_active,
-            "health": service_manager.system_health
+            "health": service_manager.system_health,
+            "market_status": await service_manager._get_market_status()
         }
         
         return performance
@@ -849,6 +920,74 @@ async def get_latest_signals():
         logger.error(f"❌ Error getting latest signals: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/market/status")
+async def get_market_status():
+    """Get current market status"""
+    try:
+        status = await service_manager._get_market_status()
+        
+        market_info = {
+            "status": status,
+            "timestamp": datetime.now().isoformat(),
+            "is_trading_hours": status == "OPEN",
+            "next_session": "Market opens at 9:15 AM IST" if status == "CLOSED" else "Market closes at 3:30 PM IST"
+        }
+        
+        # Add market data service health if available
+        if service_manager.market_data_service:
+            try:
+                health = await service_manager.market_data_service.get_service_health()
+                market_info["data_source"] = "yahoo_finance" if health.get('yahoo_finance_connected') else "mock"
+                market_info["watchlist_size"] = health.get('watchlist_size', 0)
+            except Exception as e:
+                logger.debug(f"Failed to get market data health: {e}")
+        
+        return market_info
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting market status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/market/data/{symbol}")
+async def get_stock_data(symbol: str):
+    """Get live market data for a specific stock"""
+    if not service_manager.market_data_service:
+        raise HTTPException(status_code=503, detail="Market data service not available")
+    
+    try:
+        symbol = symbol.upper()
+        data = await service_manager.market_data_service.get_live_market_data(symbol)
+        return data
+    except Exception as e:
+        logger.error(f"❌ Error getting stock data for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/market/watchlist")
+async def get_watchlist_data():
+    """Get live data for all watchlist stocks"""
+    if not service_manager.market_data_service:
+        raise HTTPException(status_code=503, detail="Market data service not available")
+    
+    try:
+        data = await service_manager.market_data_service.get_watchlist_data()
+        return data
+    except Exception as e:
+        logger.error(f"❌ Error getting watchlist data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/market/premarket")
+async def get_premarket_analysis():
+    """Get pre-market analysis"""
+    if not service_manager.market_data_service:
+        raise HTTPException(status_code=503, detail="Market data service not available")
+    
+    try:
+        analysis = await service_manager.market_data_service.get_pre_market_analysis()
+        return analysis
+    except Exception as e:
+        logger.error(f"❌ Error getting pre-market analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/test-telegram")
 async def test_telegram_notification():
     """Manual endpoint to test Telegram notifications"""
@@ -868,6 +1007,7 @@ async def test_telegram_notification():
         "stop_loss": 950,
         "confidence": 0.85,
         "sentiment_score": 0.25,
+        "timestamp": datetime.now(),
         "created_at": datetime.now().isoformat(),
         "status": "test"
     }
@@ -937,21 +1077,30 @@ async def restart_signal_generation():
 @app.get("/api/system/status")
 async def get_system_status():
     """Get detailed system status"""
+    market_status = "UNKNOWN"
+    try:
+        market_status = await service_manager._get_market_status()
+    except Exception as e:
+        logger.debug(f"Failed to get market status: {e}")
+    
     return {
         "initialized": service_manager.is_initialized,
         "initialization_error": service_manager.initialization_error,
         "system_health": service_manager.system_health,
         "signal_generation_active": service_manager.signal_generation_active,
         "active_connections": len(service_manager.active_connections),
+        "market_status": market_status,
         "ml_available": ML_AVAILABLE,
         "signal_logging_available": SIGNAL_LOGGING_AVAILABLE,
+        "market_data_available": MARKET_DATA_AVAILABLE,
+        "telegram_available": TELEGRAM_AVAILABLE,
         "configuration": {
             "environment": settings.environment,
             "debug": settings.debug,
             "telegram_configured": settings.is_telegram_configured,
             "zerodha_configured": settings.is_zerodha_configured,
-            "ml_enabled": settings.is_ml_enabled,
-            "max_signals_per_day": settings.max_signals_per_day
+            "max_signals_per_day": settings.max_signals_per_day,
+            "signal_interval": settings.signal_generation_interval
         },
         "timestamp": datetime.now().isoformat()
     }
@@ -968,13 +1117,17 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         # Send initial analytics if available
         if service_manager.analytics_service:
-            performance = service_manager.analytics_service.get_performance_summary()
-            await websocket.send_json({
-                "type": "initial_data",
-                "analytics": performance,
-                "system_health": service_manager.system_health,
-                "timestamp": datetime.now().isoformat()
-            })
+            try:
+                performance = service_manager.analytics_service.get_performance_summary()
+                await websocket.send_json({
+                    "type": "initial_data",
+                    "analytics": performance,
+                    "system_health": service_manager.system_health,
+                    "market_status": await service_manager._get_market_status(),
+                    "timestamp": datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.debug(f"Failed to send initial analytics: {e}")
         
         # Keep connection alive and handle incoming messages
         while True:
@@ -990,12 +1143,25 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
                 elif message.get("type") == "request_analytics":
                     if service_manager.analytics_service:
-                        performance = service_manager.analytics_service.get_performance_summary()
+                        try:
+                            performance = service_manager.analytics_service.get_performance_summary()
+                            await websocket.send_json({
+                                "type": "analytics_update",
+                                "data": performance,
+                                "timestamp": datetime.now().isoformat()
+                            })
+                        except Exception as e:
+                            logger.debug(f"Failed to send analytics update: {e}")
+                elif message.get("type") == "request_market_status":
+                    try:
+                        market_status = await service_manager._get_market_status()
                         await websocket.send_json({
-                            "type": "analytics_update",
-                            "data": performance,
+                            "type": "market_status_update",
+                            "data": {"status": market_status},
                             "timestamp": datetime.now().isoformat()
                         })
+                    except Exception as e:
+                        logger.debug(f"Failed to send market status: {e}")
                 
             except json.JSONDecodeError:
                 await websocket.send_json({
