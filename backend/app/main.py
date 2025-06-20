@@ -364,9 +364,29 @@ class TradeMindServiceManager:
     async def _load_or_train_models(self) -> bool:
         """Load existing models or trigger training"""
         try:
-            # For now, just return False to use demo signals
-            # Real model loading would go here
-            return False
+            # Check if model files exist
+            models_dir = Path("models")
+            model_files_to_check = [
+                "xgboost_model_production.pkl",
+                "xgboost_model_v1.0.pkl",
+                ".models_trained",
+                "model_health.json"
+            ]
+            
+            # Check if any model files exist
+            models_available = False
+            for model_file in model_files_to_check:
+                if (models_dir / model_file).exists():
+                    models_available = True
+                    logger.info(f"✅ Found model file: {model_file}")
+                    break
+            
+            if models_available:
+                logger.info("✅ ML models are available and healthy")
+                return True
+            else:
+                logger.warning("⚠️ No ML model files found - using demo signals")
+                return False
             
         except Exception as e:
             logger.error(f"❌ Model loading/training failed: {e}")
