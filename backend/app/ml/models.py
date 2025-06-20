@@ -22,7 +22,7 @@ from sklearn.model_selection import train_test_split, TimeSeriesSplit, cross_val
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, accuracy_score
 import xgboost as xgb
 
 # Sentiment Analysis
@@ -664,6 +664,380 @@ class XGBoostSignalModel:
                 
         except Exception as e:
             logger.error(f"Model load failed: {e}")
+            return False
+
+class EnsembleModel:
+    """
+    Advanced Ensemble Model combining multiple ML models for maximum accuracy
+    Integrates XGBoost, RandomForest, and Logistic Regression with smart weighting
+    """
+    
+    def __init__(self, model_dir: str = "models"):
+        self.model_dir = Path(model_dir)
+        self.model_dir.mkdir(exist_ok=True)
+        
+        # Individual models
+        self.xgboost_model = None
+        self.random_forest_model = None
+        self.logistic_model = None
+        
+        # Ensemble components
+        self.meta_model = None  # Meta-learner for stacking
+        self.model_weights = {"xgboost": 0.5, "random_forest": 0.3, "logistic": 0.2}
+        self.scaler = None
+        self.feature_columns = None
+        self.is_trained = False
+        self.ensemble_version = "v1.0"
+        
+        # Performance tracking
+        self.individual_performance = {}
+        self.ensemble_performance = {}
+    
+    def train(self, 
+             training_data: pd.DataFrame,
+             target_column: str = 'profitable',
+             validation_split: float = 0.2,
+             enable_stacking: bool = True) -> Dict[str, Any]:
+        """
+        Train the ensemble model with multiple algorithms
+        
+        Args:
+            training_data: DataFrame with features and target
+            target_column: Name of target column
+            validation_split: Fraction for validation set
+            enable_stacking: Whether to use stacking ensemble
+            
+        Returns:
+            Dict with training results and metrics
+        """
+        try:
+            logger.info(f"🔄 Training ensemble model on {len(training_data)} samples")
+            
+            # Prepare data
+            feature_columns = [col for col in training_data.columns if col != target_column]
+            X = training_data[feature_columns].fillna(0)
+            y = training_data[target_column]
+            
+            self.feature_columns = feature_columns
+            
+            # Split data
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y, test_size=validation_split, random_state=42, stratify=y
+            )
+            
+            # Scale features
+            self.scaler = StandardScaler()
+            X_train_scaled = self.scaler.fit_transform(X_train)
+            X_val_scaled = self.scaler.transform(X_val)
+            
+            # Train individual models
+            results = {}
+            validation_predictions = {}
+            
+            # 1. XGBoost
+            logger.info("🚀 Training XGBoost...")
+            self.xgboost_model = xgb.XGBClassifier(
+                objective='binary:logistic',
+                max_depth=6,
+                learning_rate=0.1,
+                n_estimators=200,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                random_state=42,
+                eval_metric='auc'
+            )
+            
+            self.xgboost_model.fit(X_train_scaled, y_train, verbose=False)
+            xgb_pred = self.xgboost_model.predict_proba(X_val_scaled)[:, 1]
+            xgb_accuracy = accuracy_score(y_val, (xgb_pred > 0.5).astype(int))
+            xgb_auc = roc_auc_score(y_val, xgb_pred)
+            
+            results['xgboost'] = {'accuracy': xgb_accuracy, 'auc': xgb_auc}
+            validation_predictions['xgboost'] = xgb_pred
+            
+            # 2. Random Forest
+            logger.info("🌲 Training Random Forest...")
+            self.random_forest_model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                min_samples_split=5,
+                min_samples_leaf=2,
+                random_state=42
+            )
+            
+            self.random_forest_model.fit(X_train_scaled, y_train)
+            rf_pred = self.random_forest_model.predict_proba(X_val_scaled)[:, 1]
+            rf_accuracy = accuracy_score(y_val, (rf_pred > 0.5).astype(int))
+            rf_auc = roc_auc_score(y_val, rf_pred)
+            
+            results['random_forest'] = {'accuracy': rf_accuracy, 'auc': rf_auc}
+            validation_predictions['random_forest'] = rf_pred
+            
+            # 3. Logistic Regression
+            logger.info("📈 Training Logistic Regression...")
+            self.logistic_model = LogisticRegression(
+                C=1.0,
+                random_state=42,
+                max_iter=1000
+            )
+            
+            self.logistic_model.fit(X_train_scaled, y_train)
+            lr_pred = self.logistic_model.predict_proba(X_val_scaled)[:, 1]
+            lr_accuracy = accuracy_score(y_val, (lr_pred > 0.5).astype(int))
+            lr_auc = roc_auc_score(y_val, lr_pred)
+            
+            results['logistic'] = {'accuracy': lr_accuracy, 'auc': lr_auc}
+            validation_predictions['logistic'] = lr_pred
+            
+            # Calculate dynamic weights based on AUC performance
+            total_auc = sum(r['auc'] for r in results.values())
+            if total_auc > 0:
+                self.model_weights = {
+                    model: results[model]['auc'] / total_auc 
+                    for model in results.keys()
+                }
+            
+            # Weighted ensemble prediction
+            weighted_pred = sum(
+                validation_predictions[model] * self.model_weights[model]
+                for model in validation_predictions.keys()
+            )
+            
+            weighted_accuracy = accuracy_score(y_val, (weighted_pred > 0.5).astype(int))
+            weighted_auc = roc_auc_score(y_val, weighted_pred)
+            
+            results['weighted_ensemble'] = {'accuracy': weighted_accuracy, 'auc': weighted_auc}
+            
+            # 4. Stacking ensemble (if enabled)
+            if enable_stacking and len(validation_predictions) >= 2:
+                logger.info("🔗 Training stacking meta-model...")
+                
+                # Create stacking features
+                stacking_features = np.column_stack(list(validation_predictions.values()))
+                
+                # Train meta-learner
+                self.meta_model = LogisticRegression(random_state=42)
+                self.meta_model.fit(stacking_features, y_val)
+                
+                # Meta-model predictions
+                meta_pred = self.meta_model.predict_proba(stacking_features)[:, 1]
+                meta_accuracy = accuracy_score(y_val, (meta_pred > 0.5).astype(int))
+                meta_auc = roc_auc_score(y_val, meta_pred)
+                
+                results['stacking_ensemble'] = {'accuracy': meta_accuracy, 'auc': meta_auc}
+            
+            # Store performance metrics
+            self.individual_performance = results
+            self.is_trained = True
+            
+            # Find best performer
+            best_model = max(results.items(), key=lambda x: x[1]['auc'])
+            
+            # Overall results
+            ensemble_results = {
+                'status': 'success',
+                'total_samples': len(training_data),
+                'training_samples': len(X_train),
+                'validation_samples': len(X_val),
+                'feature_count': len(feature_columns),
+                'individual_results': results,
+                'model_weights': self.model_weights,
+                'best_individual_model': best_model[0],
+                'best_individual_auc': best_model[1]['auc'],
+                'weighted_ensemble_auc': weighted_auc,
+                'ensemble_version': self.ensemble_version
+            }
+            
+            # Save ensemble
+            self.save_ensemble()
+            
+            logger.info(f"✅ Ensemble training complete!")
+            logger.info(f"📊 Best individual: {best_model[0]} (AUC: {best_model[1]['auc']:.3f})")
+            logger.info(f"🎯 Weighted ensemble AUC: {weighted_auc:.3f}")
+            
+            return ensemble_results
+            
+        except Exception as e:
+            logger.error(f"❌ Ensemble training failed: {e}")
+            return {'status': 'error', 'message': str(e)}
+    
+    def predict(self, features: Dict[str, float]) -> np.ndarray:
+        """
+        Make ensemble predictions
+        
+        Args:
+            features: Feature dictionary
+            
+        Returns:
+            Array of prediction probabilities
+        """
+        try:
+            if not self.is_trained:
+                self.load_ensemble()
+            
+            if not self.is_trained:
+                return np.array([0.5])  # Neutral prediction
+            
+            # Prepare feature vector
+            feature_vector = []
+            for col in self.feature_columns:
+                feature_vector.append(features.get(col, 0.0))
+            
+            X = np.array(feature_vector).reshape(1, -1)
+            X_scaled = self.scaler.transform(X)
+            
+            # Get individual predictions
+            predictions = {}
+            
+            if self.xgboost_model:
+                predictions['xgboost'] = self.xgboost_model.predict_proba(X_scaled)[0, 1]
+            
+            if self.random_forest_model:
+                predictions['random_forest'] = self.random_forest_model.predict_proba(X_scaled)[0, 1]
+            
+            if self.logistic_model:
+                predictions['logistic'] = self.logistic_model.predict_proba(X_scaled)[0, 1]
+            
+            if not predictions:
+                return np.array([0.5])
+            
+            # Weighted ensemble prediction
+            weighted_pred = sum(
+                pred * self.model_weights.get(model, 0)
+                for model, pred in predictions.items()
+            )
+            
+            # Stacking prediction (if available)
+            if self.meta_model and len(predictions) >= 2:
+                stacking_features = np.array(list(predictions.values())).reshape(1, -1)
+                stacking_pred = self.meta_model.predict_proba(stacking_features)[0, 1]
+                
+                # Combine weighted and stacking (70% weighted, 30% stacking)
+                final_pred = 0.7 * weighted_pred + 0.3 * stacking_pred
+            else:
+                final_pred = weighted_pred
+            
+            return np.array([final_pred])
+            
+        except Exception as e:
+            logger.error(f"❌ Ensemble prediction failed: {e}")
+            return np.array([0.5])
+    
+    def predict_proba(self, X):
+        """
+        Return prediction probabilities in sklearn format
+        
+        Args:
+            X: Feature array or dict
+            
+        Returns:
+            Array of [negative_prob, positive_prob]
+        """
+        try:
+            if isinstance(X, dict):
+                predictions = self.predict(X)
+            else:
+                # Handle DataFrame or array input
+                if hasattr(X, 'iloc'):  # DataFrame
+                    features = X.iloc[0].to_dict() if len(X) > 0 else {}
+                else:  # Array
+                    features = {col: val for col, val in zip(self.feature_columns or [], X[0] if len(X) > 0 else [])}
+                predictions = self.predict(features)
+            
+            positive_prob = predictions[0]
+            negative_prob = 1.0 - positive_prob
+            
+            return np.array([[negative_prob, positive_prob]])
+            
+        except Exception as e:
+            logger.error(f"❌ predict_proba failed: {e}")
+            return np.array([[0.5, 0.5]])
+    
+    def get_feature_importance(self) -> Dict[str, float]:
+        """Get aggregated feature importance from all models"""
+        try:
+            if not self.is_trained:
+                return {}
+            
+            importance_dict = {}
+            
+            # XGBoost importance
+            if self.xgboost_model and hasattr(self.xgboost_model, 'feature_importances_'):
+                for i, col in enumerate(self.feature_columns):
+                    importance_dict[col] = importance_dict.get(col, 0) + \
+                                         self.xgboost_model.feature_importances_[i] * self.model_weights.get('xgboost', 0)
+            
+            # Random Forest importance
+            if self.random_forest_model and hasattr(self.random_forest_model, 'feature_importances_'):
+                for i, col in enumerate(self.feature_columns):
+                    importance_dict[col] = importance_dict.get(col, 0) + \
+                                         self.random_forest_model.feature_importances_[i] * self.model_weights.get('random_forest', 0)
+            
+            # Logistic Regression coefficients (absolute values)
+            if self.logistic_model and hasattr(self.logistic_model, 'coef_'):
+                coef_abs = np.abs(self.logistic_model.coef_[0])
+                coef_norm = coef_abs / np.sum(coef_abs)  # Normalize
+                
+                for i, col in enumerate(self.feature_columns):
+                    importance_dict[col] = importance_dict.get(col, 0) + \
+                                         coef_norm[i] * self.model_weights.get('logistic', 0)
+            
+            return importance_dict
+            
+        except Exception as e:
+            logger.error(f"❌ Feature importance calculation failed: {e}")
+            return {}
+    
+    def save_ensemble(self):
+        """Save the ensemble model"""
+        try:
+            ensemble_path = self.model_dir / f"ensemble_model_{self.ensemble_version}.pkl"
+            
+            ensemble_data = {
+                'xgboost_model': self.xgboost_model,
+                'random_forest_model': self.random_forest_model,
+                'logistic_model': self.logistic_model,
+                'meta_model': self.meta_model,
+                'scaler': self.scaler,
+                'feature_columns': self.feature_columns,
+                'model_weights': self.model_weights,
+                'individual_performance': self.individual_performance,
+                'ensemble_version': self.ensemble_version,
+                'is_trained': self.is_trained
+            }
+            
+            joblib.dump(ensemble_data, ensemble_path)
+            logger.info(f"✅ Ensemble saved to {ensemble_path}")
+            
+        except Exception as e:
+            logger.error(f"❌ Ensemble save failed: {e}")
+    
+    def load_ensemble(self):
+        """Load the ensemble model"""
+        try:
+            ensemble_path = self.model_dir / f"ensemble_model_{self.ensemble_version}.pkl"
+            
+            if ensemble_path.exists():
+                ensemble_data = joblib.load(ensemble_path)
+                
+                self.xgboost_model = ensemble_data.get('xgboost_model')
+                self.random_forest_model = ensemble_data.get('random_forest_model')
+                self.logistic_model = ensemble_data.get('logistic_model')
+                self.meta_model = ensemble_data.get('meta_model')
+                self.scaler = ensemble_data.get('scaler')
+                self.feature_columns = ensemble_data.get('feature_columns')
+                self.model_weights = ensemble_data.get('model_weights', {})
+                self.individual_performance = ensemble_data.get('individual_performance', {})
+                self.is_trained = ensemble_data.get('is_trained', False)
+                
+                logger.info(f"✅ Ensemble loaded from {ensemble_path}")
+                return True
+            else:
+                logger.warning(f"⚠️ Ensemble model not found at {ensemble_path}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Ensemble load failed: {e}")
             return False
 
 class TrainingDataCollector:
