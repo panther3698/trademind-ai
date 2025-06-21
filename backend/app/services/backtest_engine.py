@@ -15,7 +15,7 @@ import json
 
 # Import our services
 from app.core.signal_logger import SignalRecord, TradeOutcome, SignalDirection
-from app.services.market_data_service import MarketDataService
+from app.services.enhanced_market_data_nifty100 import EnhancedMarketDataService as MarketDataService
 
 logger = logging.getLogger(__name__)
 

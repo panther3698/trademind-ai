@@ -3,6 +3,19 @@
 # Market Regime Detection and Engine Switching
 # ================================================================
 
+import asyncio
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+import logging
+from dataclasses import dataclass
+
+# Import market data service
+from app.services.enhanced_market_data_nifty100 import EnhancedMarketDataService as MarketDataService
+
+logger = logging.getLogger(__name__)
+
 class MarketRegime:
     """Market regime classification"""
     TRENDING_BULLISH = "TRENDING_BULLISH"
@@ -389,6 +402,13 @@ class RegimeDetector:
                 "risk_reward_ratio": 1.5,
                 "max_trades_per_day": 1,
                 "position_size_multiplier": 0.7
+            },
+            MarketRegime.LOW_VOLATILITY: {
+                "strategy": "BREAKOUT",
+                "confidence_threshold": 0.65,
+                "risk_reward_ratio": 2.2,
+                "max_trades_per_day": 3,
+                "position_size_multiplier": 1.0
             }
         }
         
