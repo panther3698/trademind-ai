@@ -1,26 +1,18 @@
 # backend/app/ml/advanced_sentiment.py
 """
-TradeMind AI - Advanced Sentiment Analysis and Filtering System
-Multiple sentiment models and alternative data sources for maximum accuracy
+TradeMind AI - Advanced Sentiment Analysis System
+Multi-model sentiment analyzer with FinBERT, RoBERTa, and ensemble methods
 """
 
-import asyncio
-import aiohttp
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Any, Union
-import logging
-import json
-import re
-from pathlib import Path
-import pickle
-from dataclasses import dataclass, asdict
 import warnings
 warnings.filterwarnings('ignore')
 
-# Basic sentiment analysis
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+import logging
+from dataclasses import dataclass
+from datetime import datetime
+from typing import List, Dict, Tuple, Any
+import re
+import asyncio
 
 # Advanced NLP libraries
 try:
@@ -28,21 +20,21 @@ try:
         AutoTokenizer, AutoModelForSequenceClassification, 
         pipeline, BertTokenizer, BertForSequenceClassification
     )
-    import torch
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
-    TRANSFORMERS_AVAILABLE = False
     print("⚠️ Transformers not available. Install with: pip install transformers torch")
+    TRANSFORMERS_AVAILABLE = False
 
 # Text processing
 try:
     import spacy
     import nltk
     from textblob import TextBlob
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
     NLP_AVAILABLE = True
 except ImportError:
-    NLP_AVAILABLE = False
     print("⚠️ Advanced NLP libraries not available. Install with: pip install spacy nltk textblob")
+    NLP_AVAILABLE = False
 
 # Financial data APIs
 try:
@@ -50,8 +42,8 @@ try:
     import pandas_datareader as pdr
     FINANCIAL_APIS_AVAILABLE = True
 except ImportError:
-    FINANCIAL_APIS_AVAILABLE = False
     print("⚠️ Financial APIs not available. Install with: pip install yfinance pandas-datareader")
+    FINANCIAL_APIS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +93,6 @@ class AdvancedSentimentAnalyzer:
         self.finbert_model = None
         self.roberta_pipeline = None
         
-        # Model weights for ensemble
         self.model_weights = {
             'vader': 0.2,
             'textblob': 0.15,
@@ -151,7 +142,6 @@ class AdvancedSentimentAnalyzer:
             "SBIN", "BHARTIARTL", "KOTAKBANK", "LT", "HCLTECH", "ASIANPAINT", "AXISBANK",
             "MARUTI", "BAJFINANCE", "TITAN", "NESTLEIND", "ULTRACEMCO", "WIPRO",
             
-            # Global stocks (for sentiment spillover)
             "AAPL", "MSFT", "GOOGL", "TSLA", "AMZN", "META", "NVDA", "NFLX"
         ]
         
@@ -390,7 +380,6 @@ class AlternativeDataCollector:
         (Requires pytrends: pip install pytrends)
         """
         try:
-            from pytrends.request import TrendReq
             
             pytrends = TrendReq(hl='en-US', tz=360)
             
@@ -529,7 +518,6 @@ class SocialSentimentMonitor:
     def __init__(self):
         self.sentiment_analyzer = AdvancedSentimentAnalyzer()
         
-        # Social media keywords for financial sentiment
         self.financial_keywords = [
             "#nifty", "#sensex", "#stocks", "#trading", "#investing",
             "#bulls", "#bears", "#market", "#earnings", "#ipo"
@@ -541,7 +529,6 @@ class SocialSentimentMonitor:
         (Requires Twitter API v2 access)
         """
         try:
-            # Mock implementation - replace with real Twitter API
             if keywords is None:
                 keywords = self.financial_keywords
             
@@ -844,7 +831,6 @@ class ComprehensiveSentimentEngine:
         await self.alt_data_collector.close()
 
 
-# Factory for easy instantiation
 class SentimentFactory:
     """Factory for creating sentiment analysis components"""
     

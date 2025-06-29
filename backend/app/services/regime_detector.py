@@ -1,6 +1,6 @@
 # ================================================================
 # backend/app/services/regime_detector.py
-# Market Regime Detection and Engine Switching
+# Simplified Market Regime Detection System
 # ================================================================
 
 import asyncio
@@ -17,70 +17,59 @@ from app.services.enhanced_market_data_nifty100 import EnhancedMarketDataService
 logger = logging.getLogger(__name__)
 
 class MarketRegime:
-    """Market regime classification"""
-    TRENDING_BULLISH = "TRENDING_BULLISH"
-    TRENDING_BEARISH = "TRENDING_BEARISH"
-    SIDEWAYS_CHOPPY = "SIDEWAYS_CHOPPY" 
-    GAP_DAY = "GAP_DAY"
-    HIGH_VOLATILITY = "HIGH_VOLATILITY"
-    LOW_VOLATILITY = "LOW_VOLATILITY"
+    """Simplified market regime classification - only 3 regimes"""
+    BULLISH = "BULLISH"
+    BEARISH = "BEARISH"
+    SIDEWAYS = "SIDEWAYS"
 
 @dataclass
 class RegimeAnalysis:
-    """Market regime analysis result"""
+    """Simplified market regime analysis result"""
     regime: str
     confidence: float
-    nifty_trend_strength: float
-    sector_dispersion: float
+    trend_strength: float
     volatility_level: float
-    volume_profile: str
-    trading_strategy: str  # "MOMENTUM", "MEAN_REVERSION", "BREAKOUT"
+    trading_strategy: str  # "MOMENTUM", "MEAN_REVERSION"
     risk_adjustment: float  # Multiplier for position sizing
 
 class RegimeDetector:
     """
-    Market regime detection system that runs at 9:30 AM
-    Classifies market conditions and switches trading strategies
+    Simplified market regime detection system
+    Only 3 regimes: BULLISH, BEARISH, SIDEWAYS
+    Reduced complexity for better performance
     """
     
     def __init__(self, market_data_service: MarketDataService):
         self.market_data = market_data_service
         
-        # Regime detection parameters
+        # Simplified regime detection parameters
         self.trend_threshold = 0.5  # % movement to confirm trend
         self.volatility_threshold = 15.0  # VIX equivalent
-        self.sector_dispersion_threshold = 2.0  # Sector spread
         
         # Current regime state
-        self.current_regime = MarketRegime.SIDEWAYS_CHOPPY
+        self.current_regime = MarketRegime.SIDEWAYS
         self.regime_confidence = 0.5
         self.last_regime_update = None
         
     async def detect_market_regime(self) -> RegimeAnalysis:
         """
-        Detect current market regime at 9:30 AM
+        Detect current market regime with simplified logic
         
         Returns:
-            RegimeAnalysis with regime classification and strategy
+            RegimeAnalysis with simplified regime classification
         """
         try:
-            logger.info("🔍 Detecting market regime...")
+            logger.info("🔍 Detecting simplified market regime...")
             
             # Get Nifty data for trend analysis
             nifty_analysis = await self._analyze_nifty_trend()
             
-            # Get sector dispersion
-            sector_analysis = await self._analyze_sector_dispersion()
-            
             # Get volatility measures
             volatility_analysis = await self._analyze_market_volatility()
             
-            # Get volume profile
-            volume_analysis = await self._analyze_volume_profile()
-            
-            # Classify regime
-            regime_result = self._classify_regime(
-                nifty_analysis, sector_analysis, volatility_analysis, volume_analysis
+            # Classify regime with simplified logic
+            regime_result = self._classify_regime_simplified(
+                nifty_analysis, volatility_analysis
             )
             
             # Update current state
@@ -88,27 +77,25 @@ class RegimeDetector:
             self.regime_confidence = regime_result.confidence
             self.last_regime_update = datetime.now()
             
-            logger.info(f"📊 Market Regime: {regime_result.regime} "
+            logger.info(f"📊 Simplified Market Regime: {regime_result.regime} "
                        f"(Confidence: {regime_result.confidence:.1%}) "
                        f"Strategy: {regime_result.trading_strategy}")
             
             return regime_result
             
         except Exception as e:
-            logger.error(f"Regime detection failed: {e}")
+            logger.error(f"Simplified regime detection failed: {e}")
             return RegimeAnalysis(
-                regime=MarketRegime.SIDEWAYS_CHOPPY,
+                regime=MarketRegime.SIDEWAYS,
                 confidence=0.5,
-                nifty_trend_strength=0.0,
-                sector_dispersion=1.0,
+                trend_strength=0.0,
                 volatility_level=15.0,
-                volume_profile="NORMAL",
                 trading_strategy="MEAN_REVERSION",
                 risk_adjustment=1.0
             )
     
     async def _analyze_nifty_trend(self) -> Dict[str, float]:
-        """Analyze Nifty trend strength and direction"""
+        """Analyze Nifty trend strength and direction - simplified"""
         try:
             # Get Nifty data
             nifty_data = await self.market_data.get_live_market_data("NIFTY50")
@@ -120,336 +107,155 @@ class RegimeDetector:
             # Calculate gap from previous close
             gap_pct = ((quote["ltp"] - quote["prev_close"]) / quote["prev_close"]) * 100
             
-            # Get first 15 minutes movement (mock for now)
-            # In production, collect actual 15-minute data
-            current_time = datetime.now()
-            market_open = current_time.replace(hour=9, minute=15, second=0, microsecond=0)
-            
-            if current_time >= market_open + timedelta(minutes=15):
-                # Mock 15-minute movement calculation
-                movement_15min = gap_pct * 0.6  # Assume some movement from gap
-            else:
-                movement_15min = gap_pct
-            
-            # Calculate trend strength
-            trend_strength = abs(movement_15min)
-            direction = 1.0 if movement_15min > 0 else -1.0
+            # Simplified trend calculation
+            trend_strength = abs(gap_pct)
+            direction = 1.0 if gap_pct > 0 else -1.0
             
             return {
                 "trend_strength": trend_strength,
                 "direction": direction,
-                "gap_pct": gap_pct,
-                "movement_15min": movement_15min
+                "gap_pct": gap_pct
             }
             
         except Exception as e:
             logger.error(f"Nifty trend analysis failed: {e}")
             return {"trend_strength": 0.0, "direction": 0.0, "gap_pct": 0.0}
     
-    async def _analyze_sector_dispersion(self) -> Dict[str, float]:
-        """Analyze sector performance dispersion"""
+    async def _analyze_market_volatility(self) -> Dict[str, Any]:
+        """Analyze market volatility - simplified"""
         try:
-            # Get sector leaders for analysis
-            sector_stocks = {
-                "BANKING": ["HDFCBANK", "ICICIBANK", "KOTAKBANK"],
-                "IT": ["TCS", "INFY", "HCLTECH"],
-                "PHARMA": ["SUNPHARMA", "DRREDDY", "CIPLA"],
-                "AUTO": ["MARUTI", "TATAMOTORS", "M&M"],
-                "FMCG": ["HINDUNILVR", "ITC", "NESTLEIND"]
-            }
-            
-            sector_performances = {}
-            
-            for sector, stocks in sector_stocks.items():
-                sector_performance = []
-                
-                for stock in stocks:
-                    try:
-                        stock_data = await self.market_data.get_live_market_data(stock)
-                        if stock_data and stock_data.get("quote"):
-                            quote = stock_data["quote"]
-                            change_pct = ((quote["ltp"] - quote["prev_close"]) / quote["prev_close"]) * 100
-                            sector_performance.append(change_pct)
-                            
-                        # Rate limiting
-                        await asyncio.sleep(0.1)
-                        
-                    except Exception as e:
-                        logger.debug(f"Failed to get data for {stock}: {e}")
-                        continue
-                
-                if sector_performance:
-                    sector_performances[sector] = np.mean(sector_performance)
-            
-            # Calculate dispersion
-            if len(sector_performances) > 0:
-                performances = list(sector_performances.values())
-                sector_dispersion = np.std(performances)
-                sector_range = max(performances) - min(performances)
+            # Sample high-volume stocks for volatility analysis
+            volatility_stocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK"]
+            volatility_measures = []
+            for stock in volatility_stocks:
+                try:
+                    stock_data = await self.market_data.get_live_market_data(stock)
+                    if stock_data and stock_data.get("quote"):
+                        quote = stock_data["quote"]
+                        change_pct = abs((quote["ltp"] - quote["prev_close"]) / quote["prev_close"]) * 100
+                        volatility_measures.append(change_pct)
+                    await asyncio.sleep(0.1)
+                except Exception as e:
+                    logger.debug(f"Volatility analysis failed for {stock}: {e}")
+                    continue
+            if volatility_measures:
+                avg_volatility = np.mean(volatility_measures)
+                volatility_level = min(30.0, max(5.0, float(avg_volatility) * 2))  # Scale and cap
             else:
-                sector_dispersion = 1.0
-                sector_range = 2.0
-            
+                volatility_level = 15.0
             return {
-                "sector_dispersion": sector_dispersion,
-                "sector_range": sector_range,
-                "sector_performances": sector_performances
+                "volatility_level": volatility_level,
+                "volatility_regime": "HIGH" if volatility_level > 20 else "NORMAL" if volatility_level > 10 else "LOW"
             }
-            
-        except Exception as e:
-            logger.error(f"Sector dispersion analysis failed: {e}")
-            return {"sector_dispersion": 1.0, "sector_range": 2.0, "sector_performances": {}}
-    
-    async def _analyze_market_volatility(self) -> Dict[str, float]:
-        """Analyze market volatility levels"""
-        try:
-            # In production, get actual VIX data
-            # For now, estimate volatility from Nifty movement
-            
-            nifty_data = await self.market_data.get_live_market_data("NIFTY50")
-            if not nifty_data or not nifty_data.get("quote"):
-                return {"volatility_level": 15.0, "volatility_regime": "NORMAL"}
-            
-            quote = nifty_data["quote"]
-            
-            # Calculate intraday range as volatility proxy
-            if quote.get("high") and quote.get("low"):
-                intraday_range_pct = ((quote["high"] - quote["low"]) / quote["ltp"]) * 100
-                
-                # Estimate VIX equivalent
-                estimated_vix = intraday_range_pct * 3  # Rough conversion
-            else:
-                estimated_vix = 15.0
-            
-            # Classify volatility regime
-            if estimated_vix > 25:
-                volatility_regime = "HIGH"
-            elif estimated_vix < 12:
-                volatility_regime = "LOW"
-            else:
-                volatility_regime = "NORMAL"
-            
-            return {
-                "volatility_level": estimated_vix,
-                "volatility_regime": volatility_regime,
-                "intraday_range_pct": intraday_range_pct if 'intraday_range_pct' in locals() else 1.0
-            }
-            
         except Exception as e:
             logger.error(f"Volatility analysis failed: {e}")
             return {"volatility_level": 15.0, "volatility_regime": "NORMAL"}
     
-    async def _analyze_volume_profile(self) -> Dict[str, Any]:
-        """Analyze market volume profile"""
-        try:
-            # Sample high-volume stocks for market volume analysis
-            volume_stocks = ["RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY"]
-            
-            volume_ratios = []
-            
-            for stock in volume_stocks:
-                try:
-                    stock_data = await self.market_data.get_live_market_data(stock)
-                    if stock_data and stock_data.get("technical_indicators"):
-                        indicators = stock_data["technical_indicators"]
-                        volume_ratio = indicators.get("volume_ratio", 1.0)
-                        volume_ratios.append(volume_ratio)
-                        
-                    await asyncio.sleep(0.1)
-                    
-                except Exception as e:
-                    logger.debug(f"Volume analysis failed for {stock}: {e}")
-                    continue
-            
-            if volume_ratios:
-                avg_volume_ratio = np.mean(volume_ratios)
-                
-                if avg_volume_ratio > 1.5:
-                    volume_profile = "HIGH"
-                elif avg_volume_ratio < 0.8:
-                    volume_profile = "LOW"
-                else:
-                    volume_profile = "NORMAL"
-            else:
-                avg_volume_ratio = 1.0
-                volume_profile = "NORMAL"
-            
-            return {
-                "avg_volume_ratio": avg_volume_ratio,
-                "volume_profile": volume_profile,
-                "volume_stocks_analyzed": len(volume_ratios)
-            }
-            
-        except Exception as e:
-            logger.error(f"Volume profile analysis failed: {e}")
-            return {"avg_volume_ratio": 1.0, "volume_profile": "NORMAL"}
-    
-    def _classify_regime(self, 
+    def _classify_regime_simplified(self, 
                         nifty_analysis: Dict,
-                        sector_analysis: Dict,
-                        volatility_analysis: Dict,
-                        volume_analysis: Dict) -> RegimeAnalysis:
-        """Classify market regime based on all analyses"""
+                                  volatility_analysis: Dict) -> RegimeAnalysis:
+        """Simplified regime classification - only 3 regimes"""
         try:
             trend_strength = nifty_analysis.get("trend_strength", 0.0)
-            gap_pct = abs(nifty_analysis.get("gap_pct", 0.0))
-            sector_dispersion = sector_analysis.get("sector_dispersion", 1.0)
+            direction = nifty_analysis.get("direction", 0.0)
             volatility_level = volatility_analysis.get("volatility_level", 15.0)
-            volume_profile = volume_analysis.get("volume_profile", "NORMAL")
             
-            # Classification logic
-            regime = MarketRegime.SIDEWAYS_CHOPPY  # Default
-            trading_strategy = "MEAN_REVERSION"    # Default
+            # Simplified classification logic
+            regime = MarketRegime.SIDEWAYS  # Default
+            trading_strategy = "MEAN_REVERSION"  # Default
             confidence = 0.5
             risk_adjustment = 1.0
             
-            # Gap day detection
-            if gap_pct > 1.0:  # >1% gap
-                regime = MarketRegime.GAP_DAY
-                trading_strategy = "BREAKOUT"
-                confidence = 0.8
-                risk_adjustment = 1.2  # Increase risk in gap days
-                
-            # Trending market detection
-            elif trend_strength > 0.75 and sector_dispersion < 2.0:
-                if nifty_analysis.get("direction", 0) > 0:
-                    regime = MarketRegime.TRENDING_BULLISH
-                else:
-                    regime = MarketRegime.TRENDING_BEARISH
+            # Bullish regime: strong positive trend
+            if trend_strength > 0.75 and direction > 0:
+                regime = MarketRegime.BULLISH
                 trading_strategy = "MOMENTUM"
-                confidence = 0.75
+                confidence = 0.7
                 risk_adjustment = 1.1
                 
-            # High volatility detection
-            elif volatility_level > 20:
-                regime = MarketRegime.HIGH_VOLATILITY
-                trading_strategy = "MEAN_REVERSION"
+            # Bearish regime: strong negative trend
+            elif trend_strength > 0.75 and direction < 0:
+                regime = MarketRegime.BEARISH
+                trading_strategy = "MOMENTUM"
                 confidence = 0.7
-                risk_adjustment = 0.8  # Reduce risk in high volatility
+                risk_adjustment = 0.9
                 
-            # Low volatility detection
-            elif volatility_level < 12 and sector_dispersion < 1.5:
-                regime = MarketRegime.LOW_VOLATILITY
-                trading_strategy = "BREAKOUT"
+            # Sideways regime: weak trend or high volatility
+            else:
+                regime = MarketRegime.SIDEWAYS
+                trading_strategy = "MEAN_REVERSION"
                 confidence = 0.6
                 risk_adjustment = 1.0
-                
-            # Choppy/sideways (default)
-            else:
-                regime = MarketRegime.SIDEWAYS_CHOPPY
-                trading_strategy = "MEAN_REVERSION"
-                confidence = 0.6
-                risk_adjustment = 0.9
             
             return RegimeAnalysis(
                 regime=regime,
                 confidence=confidence,
-                nifty_trend_strength=trend_strength,
-                sector_dispersion=sector_dispersion,
+                trend_strength=trend_strength,
                 volatility_level=volatility_level,
-                volume_profile=volume_profile,
                 trading_strategy=trading_strategy,
                 risk_adjustment=risk_adjustment
             )
             
         except Exception as e:
-            logger.error(f"Regime classification failed: {e}")
+            logger.error(f"Simplified regime classification failed: {e}")
             return RegimeAnalysis(
-                regime=MarketRegime.SIDEWAYS_CHOPPY,
+                regime=MarketRegime.SIDEWAYS,
                 confidence=0.5,
-                nifty_trend_strength=0.0,
-                sector_dispersion=1.0,
+                trend_strength=0.0,
                 volatility_level=15.0,
-                volume_profile="NORMAL",
                 trading_strategy="MEAN_REVERSION",
                 risk_adjustment=1.0
             )
     
     def get_strategy_for_regime(self, regime: str) -> Dict[str, Any]:
-        """Get trading strategy parameters for current regime"""
+        """Get simplified trading strategy parameters for current regime"""
         strategy_configs = {
-            MarketRegime.TRENDING_BULLISH: {
+            MarketRegime.BULLISH: {
                 "strategy": "MOMENTUM",
                 "confidence_threshold": 0.65,
-                "risk_reward_ratio": 2.5,
-                "max_trades_per_day": 4,
+                "risk_reward_ratio": 2.0,
+                "max_trades_per_day": 3,
                 "position_size_multiplier": 1.1
             },
-            MarketRegime.TRENDING_BEARISH: {
-                "strategy": "MOMENTUM_SHORT",
+            MarketRegime.BEARISH: {
+                "strategy": "MOMENTUM",
                 "confidence_threshold": 0.70,
                 "risk_reward_ratio": 2.0,
                 "max_trades_per_day": 3,
-                "position_size_multiplier": 1.0
+                "position_size_multiplier": 0.9
             },
-            MarketRegime.SIDEWAYS_CHOPPY: {
+            MarketRegime.SIDEWAYS: {
                 "strategy": "MEAN_REVERSION",
                 "confidence_threshold": 0.75,
                 "risk_reward_ratio": 1.8,
                 "max_trades_per_day": 2,
-                "position_size_multiplier": 0.9
-            },
-            MarketRegime.GAP_DAY: {
-                "strategy": "BREAKOUT",
-                "confidence_threshold": 0.80,
-                "risk_reward_ratio": 3.0,
-                "max_trades_per_day": 2,
-                "position_size_multiplier": 1.2
-            },
-            MarketRegime.HIGH_VOLATILITY: {
-                "strategy": "MEAN_REVERSION",
-                "confidence_threshold": 0.80,
-                "risk_reward_ratio": 1.5,
-                "max_trades_per_day": 1,
-                "position_size_multiplier": 0.7
-            },
-            MarketRegime.LOW_VOLATILITY: {
-                "strategy": "BREAKOUT",
-                "confidence_threshold": 0.65,
-                "risk_reward_ratio": 2.2,
-                "max_trades_per_day": 3,
                 "position_size_multiplier": 1.0
             }
         }
         
-        return strategy_configs.get(regime, strategy_configs[MarketRegime.SIDEWAYS_CHOPPY])
+        return strategy_configs.get(regime, strategy_configs[MarketRegime.SIDEWAYS])
+    
     async def detect_current_regime(self):
         """
-        Detect current market regime
-        Added by comprehensive_fix.py to ensure compatibility
+        Detect current market regime - simplified compatibility method
         """
         try:
-            # Try to use existing methods if available
-            if hasattr(self, 'analyze_regime'):
-                return await self.analyze_regime()
-            elif hasattr(self, 'get_current_regime'):
-                return await self.get_current_regime()
-            elif hasattr(self, 'detect_regime'):
-                return await self.detect_regime()
-            else:
-                # Fallback implementation
-                from datetime import datetime
-                import random
-                
-                # Simple regime detection based on market volatility
-                # This is a basic implementation - can be enhanced later
-                regimes = ['BULLISH_TRENDING', 'BEARISH_TRENDING', 'SIDEWAYS_CHOPPY', 'HIGH_VOLATILITY']
-                current_regime = random.choice(regimes)
-                confidence = random.uniform(0.6, 0.9)
-                
-                return {
-                    'regime': current_regime,
-                    'confidence': confidence,
-                    'timestamp': datetime.now().isoformat(),
-                    'analysis': f'Basic regime detection: {current_regime}',
-                    'source': 'fallback_implementation'
-                }
+            regime_analysis = await self.detect_market_regime()
+            return {
+                'regime': regime_analysis.regime,
+                'confidence': regime_analysis.confidence,
+                'timestamp': datetime.now().isoformat(),
+                'analysis': f'Simplified regime detection: {regime_analysis.regime}',
+                'source': 'simplified_regime_detector',
+                'trading_strategy': regime_analysis.trading_strategy,
+                'risk_adjustment': regime_analysis.risk_adjustment
+            }
         except Exception as e:
             # Error fallback
             return {
-                'regime': 'SIDEWAYS_CHOPPY',
+                'regime': MarketRegime.SIDEWAYS,
                 'confidence': 0.5,
                 'timestamp': datetime.now().isoformat(),
-                'analysis': f'Error in regime detection: {e}',
+                'analysis': f'Error in simplified regime detection: {e}',
                 'source': 'error_fallback'
             }

@@ -3,6 +3,7 @@
 TradeMind AI - Machine Learning Models and Training Pipeline
 Implements FinBERT, XGBoost, and complete feature engineering for Nifty 100 stocks
 Enhanced with Advanced Ensemble auto-detection and fallback
+FIXED: No duplicate sentiment analyzer loading + Circular import prevention
 """
 
 import pandas as pd
@@ -10,7 +11,7 @@ import numpy as np
 import pickle
 import joblib
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 import logging
 import os
 from pathlib import Path
@@ -25,9 +26,21 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, accuracy_score
 import xgboost as xgb
+from xgboost import XGBClassifier
 
-# Sentiment Analysis
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+# FIXED: Unified Sentiment Analysis Import (No Duplication)
+try:
+    from app.ml.advanced_sentiment import AdvancedSentimentAnalyzer as SentimentAnalyzer
+    SENTIMENT_AVAILABLE = True
+    SENTIMENT_TYPE = "ADVANCED"
+    print("✅ Advanced sentiment analysis available")
+except ImportError:
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer as SentimentAnalyzer
+    SENTIMENT_AVAILABLE = True
+    SENTIMENT_TYPE = "BASIC"
+    print("⚠️ Using basic VADER sentiment analysis")
+
+# FinBERT-specific imports
 try:
     from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
     FINBERT_AVAILABLE = True
@@ -38,8 +51,14 @@ except ImportError:
 # Technical Analysis
 import ta
 
-# Import our services
-from app.services.market_data_service import MarketDataService
+# FIXED: Conditional import to prevent circular imports
+if TYPE_CHECKING:
+    from app.services.market_data_service import MarketDataService
+
+def get_market_data_service():
+    """Lazy import to prevent circular import issues"""
+    from app.services.market_data_service import MarketDataService
+    return MarketDataService
 
 # ================================================================
 # NEW: Advanced Models Integration with Auto-Detection
@@ -153,6 +172,7 @@ class Nifty100StockUniverse:
 class FinBERTSentimentAnalyzer:
     """
     FinBERT-based sentiment analysis for financial news
+    FIXED: Uses unified sentiment analyzer system
     """
     
     def __init__(self):
@@ -160,7 +180,10 @@ class FinBERTSentimentAnalyzer:
         self.tokenizer = None
         self.model = None
         self.sentiment_pipeline = None
-        self.vader_analyzer = SentimentIntensityAnalyzer()  # Fallback
+        
+        # FIXED: Use unified sentiment analyzer as fallback
+        self.vader_analyzer = SentimentAnalyzer()
+        logger.info(f"✅ Initialized with {SENTIMENT_TYPE} sentiment fallback")
         
         if FINBERT_AVAILABLE:
             try:
@@ -177,11 +200,11 @@ class FinBERTSentimentAnalyzer:
                 logger.error(f"Failed to load FinBERT: {e}")
                 self.sentiment_pipeline = None
         else:
-            logger.warning("⚠️ FinBERT not available, using VADER fallback")
+            logger.warning(f"⚠️ FinBERT not available, using {SENTIMENT_TYPE} fallback")
     
     def analyze_sentiment(self, text: str) -> Dict[str, float]:
         """
-        Analyze sentiment using FinBERT (with VADER fallback)
+        Analyze sentiment using FinBERT (with unified fallback)
         
         Args:
             text: Text to analyze
@@ -213,13 +236,32 @@ class FinBERTSentimentAnalyzer:
                     "finbert_label": label
                 }
             else:
-                # Fallback to VADER
-                vader_scores = self.vader_analyzer.polarity_scores(text)
-                return {
-                    "finbert_score": vader_scores['compound'],
-                    "finbert_confidence": abs(vader_scores['compound']),
-                    "finbert_label": "fallback_vader"
-                }
+                # FIXED: Use unified sentiment analyzer fallback
+                if SENTIMENT_TYPE == "ADVANCED":
+                    # Advanced sentiment analyzer returns structured result
+                    if hasattr(self.vader_analyzer, 'analyze_text'):
+                        result = self.vader_analyzer.analyze_text(text, source="finbert_fallback")
+                        return {
+                            "finbert_score": result.finbert_score,
+                            "finbert_confidence": result.finbert_confidence,
+                            "finbert_label": f"advanced_fallback_{result.sentiment_class.lower()}"
+                        }
+                    else:
+                        # Fallback to basic method
+                        vader_scores = self.vader_analyzer.polarity_scores(text)
+                        return {
+                            "finbert_score": vader_scores['compound'],
+                            "finbert_confidence": abs(vader_scores['compound']),
+                            "finbert_label": "advanced_vader_fallback"
+                        }
+                else:
+                    # Basic VADER analyzer
+                    vader_scores = self.vader_analyzer.polarity_scores(text)
+                    return {
+                        "finbert_score": vader_scores['compound'],
+                        "finbert_confidence": abs(vader_scores['compound']),
+                        "finbert_label": "basic_vader_fallback"
+                    }
                 
         except Exception as e:
             logger.error(f"Sentiment analysis failed: {e}")
@@ -237,11 +279,20 @@ class FinBERTSentimentAnalyzer:
 class FeatureEngineering:
     """
     Comprehensive feature engineering for trading signals
+    FIXED: No duplicate sentiment analyzer loading
     """
     
-    def __init__(self, stock_universe: Nifty100StockUniverse):
+    def __init__(self, stock_universe: Nifty100StockUniverse, sentiment_analyzer=None):
         self.stock_universe = stock_universe
-        self.sentiment_analyzer = FinBERTSentimentAnalyzer()
+        
+        # FIXED: Use provided sentiment analyzer or create one if none provided
+        if sentiment_analyzer:
+            self.sentiment_analyzer = sentiment_analyzer
+            logger.info("✅ Using provided sentiment analyzer (no duplication)")
+        else:
+            # Only create if not provided (fallback for backward compatibility)
+            self.sentiment_analyzer = FinBERTSentimentAnalyzer()
+            logger.info("⚠️ Created new sentiment analyzer (fallback)")
     
     def engineer_features(self, 
                          symbol: str,
@@ -1061,6 +1112,34 @@ class EnsembleModel:
             logger.error(f"❌ predict_proba failed: {e}")
             return np.array([[0.5, 0.5]])
     
+    def predict_signal_probability(self, features: Dict[str, float]) -> Tuple[float, Dict[str, Any]]:
+        """
+        Predict signal probability for given features
+        
+        Args:
+            features: Feature dictionary
+            
+        Returns:
+            Tuple of (probability, prediction_details)
+        """
+        try:
+            predictions = self.predict(features)
+            probability = predictions[0]
+            
+            prediction_details = {
+                'probability': probability,
+                'prediction': int(probability > 0.5),
+                'confidence': max(probability, 1 - probability),
+                'ensemble_type': self.ensemble_type,
+                'model_version': self.ensemble_version
+            }
+            
+            return probability, prediction_details
+            
+        except Exception as e:
+            logger.error(f"❌ predict_signal_probability failed: {e}")
+            return 0.5, {"error": str(e)}
+    
     def get_feature_importance(self) -> Dict[str, float]:
         """Get aggregated feature importance from all models"""
         try:
@@ -1198,7 +1277,8 @@ class EnsembleModel:
             'advanced_models_available': ADVANCED_MODELS_AVAILABLE,
             'advanced_sentiment_available': ADVANCED_SENTIMENT_AVAILABLE,
             'models_used': self._get_models_used(),
-            'performance_boost': self._get_expected_performance_boost()
+            'performance_boost': self._get_expected_performance_boost(),
+            'sentiment_type': SENTIMENT_TYPE
         }
     
     def _get_models_used(self) -> List[str]:
@@ -1216,19 +1296,39 @@ class EnsembleModel:
             return "Basic ensemble - install advanced dependencies for +15-25% boost"
 
 # ================================================================
-# REST OF THE ORIGINAL CODE (TrainingDataCollector, etc.)
+# TRAINING DATA COLLECTOR (FIXED: Conditional import)
 # ================================================================
 
 class TrainingDataCollector:
     """
     Collect and prepare training data from historical signals
+    FIXED: Uses conditional import for MarketDataService
     """
     
-    def __init__(self, market_data_service: MarketDataService, signal_logger):
-        self.market_data = market_data_service
+    def __init__(self, market_data_service=None, signal_logger=None):
+        # FIXED: Accept service instance or use conditional import
+        if market_data_service is not None:
+            self.market_data = market_data_service
+        else:
+            # Lazy initialization for backward compatibility
+            self.market_data = None
+        
         self.signal_logger = signal_logger
         self.stock_universe = Nifty100StockUniverse()
-        self.feature_engineer = FeatureEngineering(self.stock_universe)
+        # FIXED: Don't create sentiment analyzer here, will be passed if needed
+        self.feature_engineer = None  # Will be initialized with sentiment analyzer if needed
+    
+    def _get_market_data_service(self):
+        """Get market data service with lazy loading"""
+        if self.market_data is None:
+            MarketDataService = get_market_data_service()
+            # This would need proper initialization in real usage
+            logger.warning("⚠️ Market data service not initialized - using placeholder")
+        return self.market_data
+    
+    def set_feature_engineer(self, feature_engineer):
+        """Set feature engineer (avoids duplicate sentiment analyzer creation)"""
+        self.feature_engineer = feature_engineer
     
     async def collect_training_data(self, 
                                   lookback_days: int = 90,
@@ -1245,6 +1345,11 @@ class TrainingDataCollector:
         """
         try:
             logger.info(f"Collecting training data for {lookback_days} days")
+            
+            # Create feature engineer if not set
+            if self.feature_engineer is None:
+                self.feature_engineer = FeatureEngineering(self.stock_universe)
+                logger.info("⚠️ Created new feature engineer for training data collection")
             
             all_training_data = []
             processed_stocks = 0
@@ -1294,7 +1399,13 @@ class TrainingDataCollector:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=lookback_days)
             
-            ohlcv_data = await self.market_data.zerodha.get_historical_data(
+            # FIXED: Use conditional market data access
+            market_service = self._get_market_data_service()
+            if market_service is None:
+                logger.warning(f"⚠️ Market data service not available for {symbol}")
+                return []
+            
+            ohlcv_data = await market_service.zerodha.get_historical_data(
                 symbol, "day", start_date, end_date
             )
             
@@ -1402,9 +1513,14 @@ class TrainingDataCollector:
 async def train_production_model():
     """Train the production Enhanced Ensemble model"""
     
-    # Initialize services
-    market_data_service = MarketDataService("api_key", "access_token")
-    await market_data_service.initialize()
+    # FIXED: Use conditional import for MarketDataService
+    try:
+        MarketDataService = get_market_data_service()
+        market_data_service = MarketDataService("api_key", "access_token")
+        await market_data_service.initialize()
+    except Exception as e:
+        logger.warning(f"⚠️ Could not initialize market data service: {e}")
+        market_data_service = None
     
     # Initialize data collector
     data_collector = TrainingDataCollector(market_data_service, None)
@@ -1430,6 +1546,7 @@ async def train_production_model():
         ensemble_info = model.get_ensemble_info()
         print(f"📊 Using {ensemble_info['ensemble_type']} ensemble with models: {ensemble_info['models_used']}")
         print(f"🎯 Expected performance: {ensemble_info['performance_boost']}")
+        print(f"💭 Sentiment type: {ensemble_info['sentiment_type']}")
         
         # Train the model
         results = model.train(training_data[feature_columns + ['profitable']])
@@ -1446,7 +1563,8 @@ async def train_production_model():
     except Exception as e:
         print(f"❌ Training failed: {e}")
     finally:
-        await market_data_service.close()
+        if market_data_service:
+            await market_data_service.close()
 
 if __name__ == "__main__":
     # Test the Enhanced ML pipeline

@@ -562,13 +562,10 @@ class BacktestEngine:
 # ================================================================
 
 class MarketRegime:
-    """Market regime classification"""
-    TRENDING_BULLISH = "TRENDING_BULLISH"
-    TRENDING_BEARISH = "TRENDING_BEARISH"
-    SIDEWAYS_CHOPPY = "SIDEWAYS_CHOPPY" 
-    GAP_DAY = "GAP_DAY"
-    HIGH_VOLATILITY = "HIGH_VOLATILITY"
-    LOW_VOLATILITY = "LOW_VOLATILITY"
+    """Market regime classification - simplified"""
+    BULLISH = "BULLISH"
+    BEARISH = "BEARISH"
+    SIDEWAYS = "SIDEWAYS"
 
 @dataclass
 class RegimeAnalysis:
@@ -597,7 +594,7 @@ class RegimeDetector:
         self.sector_dispersion_threshold = 2.0  # Sector spread
         
         # Current regime state
-        self.current_regime = MarketRegime.SIDEWAYS_CHOPPY
+        self.current_regime = MarketRegime.SIDEWAYS
         self.regime_confidence = 0.5
         self.last_regime_update = None
         
@@ -642,7 +639,7 @@ class RegimeDetector:
         except Exception as e:
             logger.error(f"Regime detection failed: {e}")
             return RegimeAnalysis(
-                regime=MarketRegime.SIDEWAYS_CHOPPY,
+                regime=MarketRegime.SIDEWAYS,
                 confidence=0.5,
                 nifty_trend_strength=0.0,
                 sector_dispersion=1.0,
@@ -843,14 +840,14 @@ class RegimeDetector:
             volume_profile = volume_analysis.get("volume_profile", "NORMAL")
             
             # Classification logic
-            regime = MarketRegime.SIDEWAYS_CHOPPY  # Default
+            regime = MarketRegime.SIDEWAYS  # Default
             trading_strategy = "MEAN_REVERSION"    # Default
             confidence = 0.5
             risk_adjustment = 1.0
             
             # Gap day detection
             if gap_pct > 1.0:  # >1% gap
-                regime = MarketRegime.GAP_DAY
+                regime = MarketRegime.SIDEWAYS
                 trading_strategy = "BREAKOUT"
                 confidence = 0.8
                 risk_adjustment = 1.2  # Increase risk in gap days
@@ -858,30 +855,30 @@ class RegimeDetector:
             # Trending market detection
             elif trend_strength > 0.75 and sector_dispersion < 2.0:
                 if nifty_analysis.get("direction", 0) > 0:
-                    regime = MarketRegime.TRENDING_BULLISH
+                    regime = MarketRegime.BULLISH
                 else:
-                    regime = MarketRegime.TRENDING_BEARISH
+                    regime = MarketRegime.BEARISH
                 trading_strategy = "MOMENTUM"
                 confidence = 0.75
                 risk_adjustment = 1.1
                 
             # High volatility detection
             elif volatility_level > 20:
-                regime = MarketRegime.HIGH_VOLATILITY
+                regime = MarketRegime.SIDEWAYS
                 trading_strategy = "MEAN_REVERSION"
                 confidence = 0.7
                 risk_adjustment = 0.8  # Reduce risk in high volatility
                 
             # Low volatility detection
             elif volatility_level < 12 and sector_dispersion < 1.5:
-                regime = MarketRegime.LOW_VOLATILITY
+                regime = MarketRegime.SIDEWAYS
                 trading_strategy = "BREAKOUT"
                 confidence = 0.6
                 risk_adjustment = 1.0
                 
             # Choppy/sideways (default)
             else:
-                regime = MarketRegime.SIDEWAYS_CHOPPY
+                regime = MarketRegime.SIDEWAYS
                 trading_strategy = "MEAN_REVERSION"
                 confidence = 0.6
                 risk_adjustment = 0.9
@@ -900,7 +897,7 @@ class RegimeDetector:
         except Exception as e:
             logger.error(f"Regime classification failed: {e}")
             return RegimeAnalysis(
-                regime=MarketRegime.SIDEWAYS_CHOPPY,
+                regime=MarketRegime.SIDEWAYS,
                 confidence=0.5,
                 nifty_trend_strength=0.0,
                 sector_dispersion=1.0,
@@ -913,35 +910,35 @@ class RegimeDetector:
     def get_strategy_for_regime(self, regime: str) -> Dict[str, Any]:
         """Get trading strategy parameters for current regime"""
         strategy_configs = {
-            MarketRegime.TRENDING_BULLISH: {
+            MarketRegime.BULLISH: {
                 "strategy": "MOMENTUM",
                 "confidence_threshold": 0.65,
                 "risk_reward_ratio": 2.5,
                 "max_trades_per_day": 4,
                 "position_size_multiplier": 1.1
             },
-            MarketRegime.TRENDING_BEARISH: {
+            MarketRegime.BEARISH: {
                 "strategy": "MOMENTUM_SHORT",
                 "confidence_threshold": 0.70,
                 "risk_reward_ratio": 2.0,
                 "max_trades_per_day": 3,
                 "position_size_multiplier": 1.0
             },
-            MarketRegime.SIDEWAYS_CHOPPY: {
+            MarketRegime.SIDEWAYS: {
                 "strategy": "MEAN_REVERSION",
                 "confidence_threshold": 0.75,
                 "risk_reward_ratio": 1.8,
                 "max_trades_per_day": 2,
                 "position_size_multiplier": 0.9
             },
-            MarketRegime.GAP_DAY: {
+            MarketRegime.SIDEWAYS: {
                 "strategy": "BREAKOUT",
                 "confidence_threshold": 0.80,
                 "risk_reward_ratio": 3.0,
                 "max_trades_per_day": 2,
                 "position_size_multiplier": 1.2
             },
-            MarketRegime.HIGH_VOLATILITY: {
+            MarketRegime.SIDEWAYS: {
                 "strategy": "MEAN_REVERSION",
                 "confidence_threshold": 0.80,
                 "risk_reward_ratio": 1.5,
@@ -950,7 +947,7 @@ class RegimeDetector:
             }
         }
         
-        return strategy_configs.get(regime, strategy_configs[MarketRegime.SIDEWAYS_CHOPPY])
+        return strategy_configs.get(regime, strategy_configs[MarketRegime.SIDEWAYS])
 
 # ================================================================
 # backend/app/services/pre_market_scanner.py

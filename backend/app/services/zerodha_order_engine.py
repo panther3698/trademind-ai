@@ -21,6 +21,9 @@ except ImportError:
     logger = logging.getLogger(__name__)
     logger.warning("⚠️ Kite Connect not installed. Install with: pip install kiteconnect")
 
+# Import performance monitoring
+from app.core.performance_monitor import performance_monitor
+
 logger = logging.getLogger(__name__)
 
 class OrderStatus(Enum):

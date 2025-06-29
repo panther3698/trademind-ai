@@ -1,0 +1,19 @@
+{
+  "pipeline_version": "v2.2_fully_corrected",
+  "is_trained": true,
+  "training_results": {
+    "status": "success",
+    "method": "comprehensive_zerodha_real_data",
+    "accuracy": 0.5471435649224436,
+    "auc_score": 0.5667764997510483,
+    "training_samples": 209911,
+    "validation_samples": 52478,
+    "feature_count": 28,
+    "training_duration": 0.4054545666666666,
+    "data_source": "zerodha_yahoo_10_year_historical",
+    "data_quality": "production_grade",
+    "created_at": "2025-06-23T08:24:24.179376"
+  },
+  "zerodha_connected": true,
+  "saved_at": "2025-06-23T08:24:24.179376"
+}

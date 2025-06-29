@@ -1,0 +1,101 @@
+{
+  "pipeline_version": "v1.0",
+  "is_trained": true,
+  "training_results": {
+    "status": "success",
+    "method": "simple",
+    "xgboost_results": {
+      "accuracy": 0.5720164609053497,
+      "auc_score": 0.526413112554724,
+      "total_samples": 9720,
+      "training_samples": 7776,
+      "test_samples": 1944,
+      "feature_count": 28,
+      "top_features": [
+        [
+          "outperforming_nifty",
+          "0.05019459"
+        ],
+        [
+          "nifty_performance",
+          "0.047555987"
+        ],
+        [
+          "price_vs_sma20",
+          "0.044433232"
+        ],
+        [
+          "sector_pharma",
+          "0.044220433"
+        ],
+        [
+          "sector_banking",
+          "0.0439402"
+        ],
+        [
+          "adx",
+          "0.04351529"
+        ],
+        [
+          "price_gap_percent",
+          "0.043490395"
+        ],
+        [
+          "momentum_10d",
+          "0.042862307"
+        ],
+        [
+          "relative_to_nifty",
+          "0.042582687"
+        ],
+        [
+          "volume_trend",
+          "0.042556725"
+        ]
+      ],
+      "classification_report": {
+        "0": {
+          "precision": 0.4396551724137931,
+          "recall": 0.26288659793814434,
+          "f1-score": 0.32903225806451614,
+          "support": 776.0
+        },
+        "1": {
+          "precision": 0.6135135135135135,
+          "recall": 0.7773972602739726,
+          "f1-score": 0.6858006042296072,
+          "support": 1168.0
+        },
+        "accuracy": 0.5720164609053497,
+        "macro avg": {
+          "precision": 0.5265843429636533,
+          "recall": 0.5201419291060585,
+          "f1-score": 0.5074164311470617,
+          "support": 1944.0
+        },
+        "weighted avg": {
+          "precision": 0.5441132703584811,
+          "recall": 0.5720164609053497,
+          "f1-score": 0.5433869022624721,
+          "support": 1944.0
+        }
+      },
+      "model_version": "v1.0"
+    },
+    "ensemble_results": {
+      "error": "all the input array dimensions except for the concatenation axis must match exactly, but along dimension 0, the array at index 0 has size 1944 and the array at index 2 has size 1",
+      "ensemble_type": "ADVANCED",
+      "models_used": [
+        "LightGBM",
+        "CatBoost",
+        "LSTM",
+        "RandomForest",
+        "LogisticRegression",
+        "SVM"
+      ]
+    },
+    "training_samples": 9720,
+    "feature_count": 28
+  },
+  "saved_at": "2025-06-22T16:32:06.401236"
+}

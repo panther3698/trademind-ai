@@ -1,0 +1,106 @@
+{
+  "flags": {
+    "news_intelligence_enabled": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "breaking_news_alerts": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "news_sentiment_analysis": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "news_signal_integration": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "regime_detection_enabled": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "regime_adaptive_signals": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "regime_notifications": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "interactive_trading_enabled": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "order_execution_enabled": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "webhook_handler_enabled": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "signal_generation_enabled": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "ml_signal_generation": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "technical_signal_generation": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "demo_signals_enabled": {
+      "enabled": false,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "production_mode": {
+      "enabled": true,
+      "last_modified": null,
+      "modified_by": null
+    },
+    "debug_logging": {
+      "enabled": false,
+      "last_modified": null,
+      "modified_by": null
+    }
+  },
+  "signal_config": {
+    "base_interval_seconds": 30,
+    "market_hours_interval_seconds": 5,
+    "off_hours_interval_seconds": 300,
+    "min_confidence_threshold": 0.7,
+    "max_confidence_threshold": 0.95,
+    "news_boost_multiplier": 1.2,
+    "regime_boost_multiplier": 1.1
+  },
+  "news_config": {
+    "enabled_sources": [
+      "reuters",
+      "bloomberg",
+      "cnbc",
+      "yahoo_finance"
+    ],
+    "disabled_sources": [],
+    "max_articles_per_source": 50,
+    "sentiment_weight": 0.3,
+    "breaking_news_weight": 0.7
+  },
+  "last_updated": "2025-06-29T13:10:00"
+}

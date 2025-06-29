@@ -1,65 +1,122 @@
 # ================================================================
 # backend/app/services/production_signal_generator.py
-# Complete Enhanced ML Signal Generator with Regime Detection Integration
+# Complete Enhanced ML Signal Generator with Regime Detection + News Intelligence Integration
+# ENHANCED: Added comprehensive news intelligence for superior signal generation
 # ================================================================
 
 import asyncio
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 import logging
 from dataclasses import asdict
+from sklearn.ensemble import RandomForestClassifier
 
-# Import our ML components
-from app.ml.models import (
-    Nifty100StockUniverse, 
-    FinBERTSentimentAnalyzer, 
-    FeatureEngineering, 
-    XGBoostSignalModel,
-    TrainingDataCollector,
-    EnsembleModel
-)
+# FIXED: Add TYPE_CHECKING imports to prevent circular imports
+if TYPE_CHECKING:
+    from app.ml.models import FeatureEngineering
+    from app.services.enhanced_market_data_nifty100 import EnhancedMarketDataService
 
-# ADD THESE ADVANCED IMPORTS:
-from app.ml.advanced_models import (
-    LightGBMModel,
-    CatBoostModel, 
-    LSTMModel,
-    EnsembleModel as AdvancedEnsembleModel
-)
-from app.ml.advanced_sentiment import (
-    ComprehensiveSentimentEngine
-)
+# FIXED: Direct import for AdvancedSentimentAnalyzer (no try/except)
+from app.ml.advanced_sentiment import AdvancedSentimentAnalyzer
+from app.ml.advanced_ensemble_patch import AdvancedEnsembleModelPatch
 
-# Import existing components
+# Import ML components with conditional loading to prevent circular imports
+def _lazy_import_ml_components():
+    """Lazy import ML components to prevent circular imports"""
+    from app.ml.models import (
+        Nifty100StockUniverse, 
+        FeatureEngineering, 
+        XGBoostSignalModel,
+        TrainingDataCollector,
+        EnsembleModel
+    )
+    return {
+        'Nifty100StockUniverse': Nifty100StockUniverse,
+        'FeatureEngineering': FeatureEngineering,
+        'XGBoostSignalModel': XGBoostSignalModel,
+        'TrainingDataCollector': TrainingDataCollector,
+        'EnsembleModel': EnsembleModel
+    }
+
+# Import advanced models with conditional loading
+def _lazy_import_advanced_models():
+    """Lazy import advanced models to prevent circular imports"""
+    try:
+        from app.ml.advanced_models import (
+            LightGBMModel,
+            CatBoostModel, 
+            LSTMModel,
+            EnsembleModel as AdvancedEnsembleModel
+        )
+        return {
+            'LightGBMModel': LightGBMModel,
+            'CatBoostModel': CatBoostModel,
+            'LSTMModel': LSTMModel,
+            'AdvancedEnsembleModel': AdvancedEnsembleModel
+        }
+    except ImportError:
+        return None
+
+# Import core components directly (these shouldn't have circular dependencies)
 from app.core.signal_logger import (
     InstitutionalSignalLogger, SignalRecord, TechnicalIndicators, 
     MarketContext, PreMarketData, SignalDirection, TradeOutcome
 )
-from app.services.enhanced_market_data_nifty100 import EnhancedMarketDataService as MarketDataService
+
+# Import simplified sentiment analyzer
+from app.ml.simplified_sentiment import SimplifiedSentimentAnalyzer
+
+# Import optimized model loader
+from app.ml.optimized_model_loader import get_optimized_loader
+
+# Import performance monitoring
+from app.core.performance_monitor import performance_monitor
 
 logger = logging.getLogger(__name__)
 
 class ProductionMLSignalGenerator:
     """
-    Production ML-based Signal Generator with Regime Detection Integration:
+    Production ML-based Signal Generator with Simplified Regime Detection + News Intelligence Integration:
     - Nifty 100 stock universe
-    - FinBERT sentiment analysis
+    - Simplified sentiment analysis (FinBERT only)
     - XGBoost prediction models
-    - Comprehensive feature engineering
-    - Market regime awareness for adaptive strategies
+    - Simplified feature engineering
+    - Simplified market regime awareness (3 regimes only)
+    - ENHANCED: Real-time news intelligence for superior signal generation
+    
+    SIMPLIFIED: Using FinBERT-only sentiment analysis for better performance
     """
     
-    def __init__(self, market_data_service: MarketDataService, signal_logger: InstitutionalSignalLogger):
+    def __init__(self, market_data_service, signal_logger: InstitutionalSignalLogger):
         self.market_data = market_data_service
         self.signal_logger = signal_logger
         
-        # Initialize ML components (Enhanced)
-        self.stock_universe = Nifty100StockUniverse()
-        self.sentiment_analyzer = ComprehensiveSentimentEngine()  # UPGRADED
-        self.feature_engineer = FeatureEngineering(self.stock_universe)
-        self.ml_model = EnsembleModel()  # UPGRADED - Enhanced with auto-detection
+        # NEWS INTELLIGENCE INTEGRATION
+        self.news_intelligence = None  # Will be set by main service manager
+        
+        # Lazy load ML components to prevent circular imports
+        self._ml_components = _lazy_import_ml_components()
+        self._advanced_models = _lazy_import_advanced_models()
+        
+        # Initialize ML components (SIMPLIFIED - single FinBERT sentiment system)
+        self.stock_universe = self._ml_components['Nifty100StockUniverse']()
+        
+        # SIMPLIFIED: Single FinBERT sentiment analyzer
+        self.sentiment_analyzer = SimplifiedSentimentAnalyzer()
+        logger.info("✅ Simplified FinBERT sentiment analyzer initialized")
+        
+        # Pass the sentiment analyzer to feature engineering to avoid duplication
+        self.feature_engineer = self._ml_components['FeatureEngineering'](
+            self.stock_universe, 
+            sentiment_analyzer=self.sentiment_analyzer  # Pass existing instance
+        )
+        
+        # OPTIMIZED: Initialize optimized model loader
+        self.optimized_loader = get_optimized_loader()
+        self.ml_model = None  # Will be loaded by optimized loader
+        logger.info("✅ Optimized model loader initialized")
         
         # Signal generation parameters (base values)
         self.base_min_ml_confidence = 0.70  # Base 70% ML confidence threshold
@@ -74,70 +131,329 @@ class ProductionMLSignalGenerator:
         self.daily_signal_count = 0
         self.last_signal_date = None
         
+        # NEWS INTELLIGENCE TRACKING
+        self.news_enhanced_signals_count = 0
+        self.last_news_analysis = None
+        
         # Performance tracking
         self.model_performance = {
             "total_predictions": 0,
             "high_confidence_predictions": 0,
             "accuracy_tracking": [],
-            "regime_performance": {}  # Track performance by regime
+            "regime_performance": {},  # Track performance by regime
+            # NEWS INTELLIGENCE PERFORMANCE
+            "news_enhanced_predictions": 0,
+            "news_accuracy_boost": 0.0,
+            # OPTIMIZED MODEL PERFORMANCE
+            "model_load_time_ms": 0.0,
+            "breaking_news_signals": 0
         }
         
         # Regime awareness
         self.regime_context = {
-            "regime": "SIDEWAYS_CHOPPY",  # Default
+            "regime": "SIDEWAYS",  # Default - simplified regime
             "confidence": 0.5,
             "risk_adjustment": 1.0,
             "trading_strategy": "MEAN_REVERSION"
         }
         
-        # Regime-specific parameters
+        # Simplified regime-specific parameters (3 regimes only)
         self.regime_configs = {
-            "TRENDING_BULLISH": {
+            "BULLISH": {
                 "confidence_adjustment": -0.05,  # Lower threshold (easier to trigger)
                 "max_signals_multiplier": 1.3,   # More signals allowed
                 "risk_multiplier": 1.1,          # Slightly higher risk
                 "rr_ratio_bonus": 0.5,           # Better risk-reward
-                "analysis_limit_multiplier": 1.5
+                "analysis_limit_multiplier": 1.5,
+                "news_weight": 0.25               # NEWS: Weight in signal scoring
             },
-            "TRENDING_BEARISH": {
+            "BEARISH": {
                 "confidence_adjustment": -0.03,
                 "max_signals_multiplier": 1.1,
                 "risk_multiplier": 1.0,
                 "rr_ratio_bonus": 0.3,
-                "analysis_limit_multiplier": 1.3
+                "analysis_limit_multiplier": 1.3,
+                "news_weight": 0.30               # NEWS: Higher weight in bearish trends
             },
-            "SIDEWAYS_CHOPPY": {
+            "SIDEWAYS": {
                 "confidence_adjustment": +0.10,  # Higher threshold (harder to trigger)
                 "max_signals_multiplier": 0.7,   # Fewer signals
                 "risk_multiplier": 0.8,          # Lower risk
                 "rr_ratio_bonus": 0.0,           # Standard risk-reward
-                "analysis_limit_multiplier": 1.0
-            },
-            "GAP_DAY": {
-                "confidence_adjustment": -0.05,
-                "max_signals_multiplier": 1.5,
-                "risk_multiplier": 1.2,
-                "rr_ratio_bonus": 0.8,
-                "analysis_limit_multiplier": 1.8
-            },
-            "HIGH_VOLATILITY": {
-                "confidence_adjustment": +0.15,  # Much higher threshold
-                "max_signals_multiplier": 0.5,   # Much fewer signals
-                "risk_multiplier": 0.6,          # Much lower risk
-                "rr_ratio_bonus": -0.2,          # Conservative targets
-                "analysis_limit_multiplier": 0.6
-            },
-            "LOW_VOLATILITY": {
-                "confidence_adjustment": -0.02,
-                "max_signals_multiplier": 1.2,
-                "risk_multiplier": 1.0,
-                "rr_ratio_bonus": 0.2,
-                "analysis_limit_multiplier": 1.2
+                "analysis_limit_multiplier": 1.0,
+                "news_weight": 0.35               # NEWS: Higher weight in choppy markets
             }
         }
         
         # Initialize model (load if exists, train if needed)
         self._initialize_ml_model()
+        
+        logger.info("✅ Production ML Signal Generator initialized with single sentiment system + News Intelligence ready")
+    
+    # ================================================================
+    # NEWS INTELLIGENCE INTEGRATION METHODS
+    # ================================================================
+    
+    def set_news_intelligence(self, news_intelligence_service):
+        """Set news intelligence service reference (optional enhancement)"""
+        try:
+            self.news_intelligence = news_intelligence_service
+            if news_intelligence_service:
+                logger.info("🔗 News intelligence connected (optional enhancement)")
+            else:
+                logger.info("ℹ️ News intelligence not connected - using ML-only signals")
+        except Exception as e:
+            logger.error(f"Failed to set news intelligence: {e}")
+    
+    async def _get_simplified_news_sentiment(self, symbol: str) -> Dict:
+        """Get simplified news sentiment (optional enhancement)"""
+        try:
+            if not self.news_intelligence:
+                # No news intelligence - return neutral sentiment
+                return {
+                    "finbert_score": 0.0,
+                    "finbert_confidence": 0.0,
+                    "weighted_score": 0.0,
+                    "news_count": 0,
+                    "sentiment_score": 0.0,
+                    "news_impact_score": 0.0,
+                    "enhanced_by_news_intelligence": False
+                }
+            
+            # Use news intelligence if available
+            news_analysis = await self.news_intelligence.get_comprehensive_news_intelligence(
+                symbols=[symbol],
+                lookback_hours=24
+            )
+            
+            if not news_analysis or "error" in news_analysis:
+                return {
+                    "finbert_score": 0.0,
+                    "finbert_confidence": 0.0,
+                    "weighted_score": 0.0,
+                    "news_count": 0,
+                    "sentiment_score": 0.0,
+                    "news_impact_score": 0.0,
+                    "enhanced_by_news_intelligence": False
+                }
+            
+            # Extract simplified sentiment data
+            sentiment_analysis = news_analysis.get("sentiment_analysis", {})
+            symbol_sentiment = sentiment_analysis.get("symbol_sentiment", {}).get(symbol, 0.0)
+            
+            # Calculate simple news impact score
+            news_impact = min(1.0, abs(symbol_sentiment) * 2.0)  # Scale sentiment to impact
+            
+            return {
+                "finbert_score": symbol_sentiment,
+                "finbert_confidence": abs(symbol_sentiment) if symbol_sentiment else 0.0,
+                "weighted_score": symbol_sentiment,
+                "news_count": news_analysis.get("total_articles_analyzed", 0),
+                "sentiment_score": symbol_sentiment,
+                "news_impact_score": news_impact,
+                "enhanced_by_news_intelligence": True
+            }
+                
+        except Exception as e:
+            logger.error(f"Simplified news sentiment analysis failed for {symbol}: {e}")
+            return {
+                "finbert_score": 0.0,
+                "finbert_confidence": 0.0,
+                "weighted_score": 0.0,
+                "news_count": 0,
+                "sentiment_score": 0.0,
+                "news_impact_score": 0.0,
+                "enhanced_by_news_intelligence": False
+            }
+    
+    async def _get_comprehensive_news_sentiment(self, symbol: str) -> Dict:
+        """Get comprehensive news sentiment using enhanced news intelligence system"""
+        try:
+            if self.news_intelligence:
+                # Use comprehensive news intelligence
+                news_analysis = await self.news_intelligence.get_comprehensive_news_intelligence(
+                    symbols=[symbol],
+                    lookback_hours=24
+                )
+                
+                # Extract enhanced sentiment data
+                sentiment_analysis = news_analysis.get("sentiment_analysis", {})
+                symbol_sentiment = sentiment_analysis.get("symbol_sentiment", {}).get(symbol, 0.0)
+                overall_sentiment = news_analysis.get("overall_sentiment", 0.0)
+                market_events = news_analysis.get("market_events", [])
+                
+                # Calculate news impact score
+                news_impact = self._calculate_news_impact_score(symbol, market_events, sentiment_analysis)
+                
+                return {
+                    "finbert_score": symbol_sentiment,
+                    "finbert_confidence": abs(symbol_sentiment) if symbol_sentiment else 0.0,
+                    "weighted_score": symbol_sentiment,
+                    "overall_market_sentiment": overall_sentiment,
+                    "symbol_specific_sentiment": symbol_sentiment,
+                    "news_count": news_analysis.get("total_articles_analyzed", 0),
+                    "sentiment_score": symbol_sentiment,
+                    "news_impact_score": news_impact,
+                    "high_impact_events": [e for e in market_events if symbol in e.get("symbols_mentioned", [])],
+                    "breaking_news_detected": len([e for e in market_events if e.get("significance_score", 0) > 0.8]) > 0,
+                    "news_sources_count": len(news_analysis.get("news_sources_used", [])),
+                    "latest_headline": market_events[0].get("title", "") if market_events else None,
+                    "enhanced_by_news_intelligence": True
+                }
+            else:
+                # Fallback to existing method
+                return await self._get_enhanced_sentiment(symbol)
+                
+        except Exception as e:
+            logger.error(f"Comprehensive news sentiment analysis failed for {symbol}: {e}")
+            # Fallback to existing method
+            return await self._get_enhanced_sentiment(symbol)
+    
+    def _calculate_news_impact_score(self, symbol: str, market_events: List[Dict], sentiment_analysis: Dict) -> float:
+        """Calculate news impact score for the symbol"""
+        try:
+            impact_score = 0.0
+            
+            # Check for symbol-specific events
+            symbol_events = [e for e in market_events if symbol in e.get("symbols_mentioned", [])]
+            
+            for event in symbol_events:
+                significance = event.get("significance_score", 0.0)
+                sentiment = event.get("sentiment_score", 0.0)
+                
+                # Weight by significance and sentiment strength
+                event_impact = significance * abs(sentiment)
+                impact_score += event_impact
+            
+            # Add sector-wide impact
+            sector = self.stock_universe.get_sector(symbol)
+            sector_sentiment = sentiment_analysis.get("sector_sentiment", {}).get(sector, 0.0)
+            sector_impact = abs(sector_sentiment) * 0.3  # 30% weight for sector news
+            
+            impact_score += sector_impact
+            
+            # Normalize to 0-1 range
+            return min(1.0, impact_score)
+            
+        except Exception as e:
+            logger.debug(f"News impact calculation failed for {symbol}: {e}")
+            return 0.0
+    
+    async def _check_for_breaking_news_signals(self) -> List[SignalRecord]:
+        """Check for immediate trading opportunities from breaking news"""
+        try:
+            if not self.news_intelligence:
+                return []
+            
+            # Get recent breaking news (last 30 minutes)
+            news_intel = await self.news_intelligence.get_comprehensive_news_intelligence(
+                lookback_hours=0.5  # 30 minutes
+            )
+            
+            breaking_signals = []
+            high_impact_events = news_intel.get("market_events", [])
+            
+            for event in high_impact_events:
+                significance = event.get("significance_score", 0.0)
+                if significance > 0.8:  # High significance threshold
+                    
+                    symbols_mentioned = event.get("symbols_mentioned", [])
+                    for symbol in symbols_mentioned:
+                        
+                        if symbol in self.stock_universe.get_all_stocks():
+                            # Generate breaking news signal
+                            breaking_signal = await self._generate_breaking_news_signal(event, symbol)
+                            if breaking_signal:
+                                breaking_signals.append(breaking_signal)
+                                self.breaking_news_signals_count += 1
+                                logger.info(f"🚨 Breaking news signal generated: {symbol} - {event.get('title', '')[:50]}...")
+            
+            return breaking_signals
+            
+        except Exception as e:
+            logger.error(f"Breaking news signal check failed: {e}")
+            return []
+    
+    async def _generate_breaking_news_signal(self, event: Dict, symbol: str) -> Optional[SignalRecord]:
+        """Generate trading signal from breaking news event"""
+        try:
+            sentiment_score = event.get("sentiment_score", 0.0)
+            significance_score = event.get("significance_score", 0.0)
+            
+            # Only generate signals for strong sentiment with high significance
+            if abs(sentiment_score) < 0.4 or significance_score < 0.8:
+                return None
+            
+            # Get current market data
+            market_data = await self.market_data.get_live_market_data(symbol)
+            if not market_data or not market_data.get("quote"):
+                return None
+            
+            quote = market_data["quote"]
+            current_regime = self.regime_context.get("regime", "SIDEWAYS")
+            
+            # Determine direction based on sentiment
+            direction = SignalDirection.BUY if sentiment_score > 0 else SignalDirection.SELL
+            entry_price = quote["ltp"]
+            
+            # Calculate price levels for breaking news (tighter stops, quick profits)
+            if direction == SignalDirection.BUY:
+                stop_loss = entry_price * 0.98  # 2% stop
+                target_price = entry_price * 1.03  # 3% target
+            else:
+                stop_loss = entry_price * 1.02  # 2% stop
+                target_price = entry_price * 0.97  # 3% target
+            
+            # Position size based on significance (higher significance = larger position)
+            base_position = 30
+            significance_multiplier = 0.5 + (significance_score * 0.5)  # 0.5x to 1.0x
+            position_size = int(base_position * significance_multiplier)
+            
+            # Create breaking news signal
+            signal = SignalRecord(
+                signal_id=f"BREAKING_NEWS_{current_regime}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}",
+                timestamp=datetime.now(),
+                ticker=symbol,
+                direction=direction,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                target_price=target_price,
+                ml_confidence=significance_score,  # Use significance as confidence
+                technical_score=0.0,  # No technical analysis for breaking news
+                sentiment_score=sentiment_score,
+                macro_score=0.0,
+                final_score=significance_score * abs(sentiment_score),
+                indicators=self._create_fallback_technical_indicators(quote),
+                market_context=await self._create_fallback_market_context(),
+                pre_market=self._create_breaking_news_pre_market_data(event),
+                risk_reward_ratio=self._calculate_risk_reward_ratio(entry_price, stop_loss, target_price, direction),
+                position_size_suggested=position_size,
+                capital_at_risk=abs(entry_price - stop_loss) * position_size,
+                model_version="v1.2_breaking_news",
+                signal_source=f"BREAKING_NEWS_{current_regime}",
+                notes=f"Breaking News: {event.get('title', '')[:100]}... | Significance: {significance_score:.1%} | Sentiment: {sentiment_score:.2f}"
+            )
+            
+            return signal
+            
+        except Exception as e:
+            logger.error(f"Breaking news signal generation failed for {symbol}: {e}")
+            return None
+    
+    def _create_breaking_news_pre_market_data(self, event: Dict) -> PreMarketData:
+        """Create pre-market data for breaking news signals"""
+        return PreMarketData(
+            gap_percentage=0.0,  # No gap data for breaking news
+            pre_market_volume=0,
+            news_sentiment_score=event.get("sentiment_score", 0.0),
+            news_count=1,  # One breaking news event
+            social_sentiment=None,
+            analyst_rating_change=None
+        )
+    
+    # ================================================================
+    # ENHANCED SIGNAL GENERATION WITH NEWS INTELLIGENCE
+    # ================================================================
     
     def set_regime_context(self, regime_context: Dict):
         """
@@ -150,7 +466,7 @@ class ProductionMLSignalGenerator:
         try:
             old_regime = self.regime_context.get("regime", "UNKNOWN")
             self.regime_context.update(regime_context)
-            new_regime = regime_context.get("regime", "SIDEWAYS_CHOPPY")
+            new_regime = regime_context.get("regime", "SIDEWAYS")
             
             if old_regime != new_regime:
                 logger.info(f"🎯 Signal generator regime update: {old_regime} → {new_regime}")
@@ -166,8 +482,8 @@ class ProductionMLSignalGenerator:
     def _update_regime_parameters(self):
         """Update signal generation parameters based on current regime"""
         try:
-            current_regime = self.regime_context.get("regime", "SIDEWAYS_CHOPPY")
-            config = self.regime_configs.get(current_regime, self.regime_configs["SIDEWAYS_CHOPPY"])
+            current_regime = self.regime_context.get("regime", "SIDEWAYS")
+            config = self.regime_configs.get(current_regime, self.regime_configs["SIDEWAYS"])
             
             # Update confidence threshold
             self.min_ml_confidence = max(0.5, min(0.9, 
@@ -184,6 +500,7 @@ class ProductionMLSignalGenerator:
             logger.info(f"  • Max signals/day: {self.max_signals_per_day}")
             logger.info(f"  • Risk multiplier: {config['risk_multiplier']:.1f}x")
             logger.info(f"  • R:R bonus: {config['rr_ratio_bonus']:+.1f}")
+            logger.info(f"  • News weight: {config['news_weight']:.1%}")  # NEWS: Show news weight
             
         except Exception as e:
             logger.error(f"❌ Failed to update regime parameters: {e}")
@@ -191,30 +508,46 @@ class ProductionMLSignalGenerator:
     def _initialize_ml_model(self):
         """Initialize or load ML model"""
         try:
+            # Ensure RandomForestClassifier is available for model loading
+            from sklearn.ensemble import RandomForestClassifier
+            
+            # Try to load XGBoost bridge for advanced ensemble
+            try:
+                from app.ml.advanced_ensemble_patch import AdvancedEnsembleModelPatch
+                bridge_data = AdvancedEnsembleModelPatch.load_xgboost_bridge()
+                if bridge_data:
+                    logger.info("SUCCESS: Loaded XGBoost bridge for advanced ensemble")
+                    self._bridge_data = bridge_data
+                    return
+            except ImportError:
+                pass
+            
             # Try to load existing model
-            if self.ml_model.load_model():
-                logger.info("✅ Loaded existing XGBoost model")
+            if hasattr(self.ml_model, 'load_model') and self.ml_model.load_model():
+                logger.info("SUCCESS: Loaded existing ML model")
             else:
-                logger.warning("⚠️ No trained model found. Using fallback scoring method.")
+                logger.warning("WARNING: No trained model found. Using fallback scoring method.")
                 # In production, you'd want to train immediately
         except Exception as e:
             logger.error(f"ML model initialization failed: {e}")
     
     async def generate_signals(self) -> List[SignalRecord]:
         """
-        Generate regime-aware trading signals using ML pipeline for Nifty 100 stocks
+        Generate simplified regime-aware trading signals using ML pipeline with optional news enhancement
         
         Returns:
-            List of high-confidence ML-generated signals adapted to market regime
+            List of high-confidence ML-generated signals with optional news enhancement
         """
         try:
             # Reset daily counter if new day
             today = datetime.now().date()
             if self.last_signal_date != today:
                 self.daily_signal_count = 0
+                self.news_enhanced_signals_count = 0
                 self.last_signal_date = today
                 logger.info(f"🌅 New trading day: {today}")
                 logger.info(f"🎯 Current regime: {self.regime_context.get('regime', 'UNKNOWN')}")
+                logger.info(f"📰 News Intelligence: {'✅ ACTIVE' if self.news_intelligence else '❌ INACTIVE'}")
             
             # Check daily limits (regime-adjusted)
             if self.daily_signal_count >= self.max_signals_per_day:
@@ -223,24 +556,27 @@ class ProductionMLSignalGenerator:
             
             # Check market status
             await self.market_data.update_market_status()
-            if self.market_data.market_status.value != "OPEN":
+            if hasattr(self.market_data, 'market_status') and self.market_data.market_status.value != "OPEN":
                 logger.info(f"Market closed: {self.market_data.market_status.value}")
                 return []
             
-            current_regime = self.regime_context.get("regime", "SIDEWAYS_CHOPPY")
-            logger.info(f"🔍 Scanning Nifty 100 stocks for ML signals (Regime: {current_regime})...")
+            # Get top opportunity stocks
+            opportunities = await self._get_top_opportunity_stocks()
+            if not opportunities:
+                logger.info("No trading opportunities found")
+                return []
             
-            # Get top opportunity stocks using pre-market analysis
-            opportunity_stocks = await self._get_top_opportunity_stocks()
-            
+            # Generate signals for top opportunities
             signals = []
+            current_regime = self.regime_context.get("regime", "SIDEWAYS")
             
-            # Analyze top opportunity stocks with ML (regime-aware)
-            analysis_limit = self._get_regime_analysis_limit()
-            for stock_data in opportunity_stocks[:analysis_limit]:
+            for stock_data in opportunities:
                 try:
+                    if self.daily_signal_count >= self.max_signals_per_day:
+                        break
+                        
                     symbol = stock_data["symbol"]
-                    signal = await self._analyze_stock_with_ml(symbol, stock_data)
+                    signal = await self._analyze_stock_with_simplified_ml_and_news(symbol, stock_data)
                     
                     if signal:
                         # Validate signal with regime-aware risk management
@@ -253,40 +589,97 @@ class ProductionMLSignalGenerator:
                             signals.append(signal)
                             self.daily_signal_count += 1
                             
+                            # Track if enhanced by news
+                            if hasattr(signal, 'notes') and signal.notes and 'News Enhanced' in signal.notes:
+                                self.news_enhanced_signals_count += 1
+                            
                             # Log the signal with regime info
                             success = self.signal_logger.log_signal(signal)
                             if success:
-                                logger.info(f"🎯 ML Signal ({current_regime}): {signal.ticker} {signal.direction.value} "
+                                news_indicator = "📰" if self.news_intelligence else ""
+                                logger.info(f"🎯 ML Signal ({current_regime}): {signal.ticker} {signal.direction.value} {news_indicator} "
                                           f"ML Confidence: {signal.ml_confidence:.1%} | "
                                           f"Entry: ₹{signal.entry_price} | Risk Adj: {self.regime_context.get('risk_adjustment', 1.0):.1f}x")
                             
                             # Track regime-specific performance
                             self._track_regime_signal(signal, current_regime)
                             
-                            # Stop if daily limit reached
-                            if self.daily_signal_count >= self.max_signals_per_day:
-                                break
-                        else:
-                            logger.warning(f"⚠️ Signal blocked by regime-aware risk limits: {symbol}")
-                
                 except Exception as e:
-                    logger.error(f"Error analyzing {symbol}: {e}")
+                    logger.error(f"Signal generation failed for {symbol}: {e}")
+                    continue
             
+            logger.info(f"✅ Generated {len(signals)} signals (Regime: {current_regime}, News Enhanced: {self.news_enhanced_signals_count})")
+            return signals
+            
+        except Exception as e:
+            logger.error(f"❌ Signal generation failed: {e}")
+            return []
+    
+    async def generate_regime_aware_signals(self, regime=None, regime_confidence=None) -> List[SignalRecord]:
+        """
+        Generate regime-aware trading signals (compatibility wrapper method)
+        
+        This method is called by main.py service manager and provides compatibility
+        with the expected interface while delegating to the main generate_signals method.
+        
+        Args:
+            regime: Market regime (optional, updates internal state)
+            regime_confidence: Regime confidence (optional)
+            
+        Returns:
+            List of regime-aware trading signals enhanced with news intelligence
+        """
+        try:
+            # Update regime context if provided
+            if regime is not None:
+                regime_str = str(regime).replace('MarketRegime.', '')  # Handle enum conversion
+                regime_context = {
+                    'regime': regime_str,
+                    'confidence': regime_confidence or 0.5,
+                    'trading_strategy': self._get_regime_strategy(regime_str),
+                    'risk_adjustment': self._get_regime_risk_adjustment(regime_str)
+                }
+                self.set_regime_context(regime_context)
+                logger.info(f"🎯 Regime context updated via generate_regime_aware_signals: {regime_str} (Conf: {regime_confidence or 0.5:.1%})")
+            
+            # Call the main signal generation method
+            signals = await self.generate_signals()
+            
+            # Log the completion with news intelligence status
             if signals:
-                logger.info(f"🚀 Generated {len(signals)} regime-aware ML signals for {today}")
+                news_status = "with News Intelligence" if self.news_intelligence else "without News Intelligence"
+                logger.info(f"✅ generate_regime_aware_signals completed: {len(signals)} signals generated {news_status}")
             else:
-                logger.info(f"📊 No ML signals met regime-adjusted confidence threshold ({self.min_ml_confidence:.1%}) today")
+                logger.info(f"📊 generate_regime_aware_signals completed: No signals generated")
             
             return signals
             
         except Exception as e:
-            logger.error(f"Regime-aware ML signal generation failed: {e}")
+            logger.error(f"❌ generate_regime_aware_signals failed: {e}")
             return []
+    
+    def _get_regime_strategy(self, regime: str) -> str:
+        """Get trading strategy for regime"""
+        regime_strategies = {
+            'BULLISH': 'MOMENTUM_FOLLOW',
+            'BEARISH': 'SHORT_TERM_REVERSAL', 
+            'SIDEWAYS': 'MEAN_REVERSION'
+        }
+        return regime_strategies.get(regime, 'MEAN_REVERSION')
+    
+    def _get_regime_risk_adjustment(self, regime: str) -> float:
+        """Get risk adjustment for regime"""
+        regime_risk = {
+            'BULLISH': 1.1,
+            'BEARISH': 0.9,
+            'SIDEWAYS': 1.0
+        }
+        return regime_risk.get(regime, 1.0)
     
     def _get_regime_analysis_limit(self) -> int:
         """Get number of stocks to analyze based on regime"""
-        current_regime = self.regime_context.get("regime", "SIDEWAYS_CHOPPY")
-        config = self.regime_configs.get(current_regime, self.regime_configs["SIDEWAYS_CHOPPY"])
+        current_regime = self.regime_context.get("regime", "SIDEWAYS")
+        config = self.regime_configs.get(current_regime, self.regime_configs["SIDEWAYS"])
         
         base_limit = 20
         multiplier = config["analysis_limit_multiplier"]
@@ -303,13 +696,17 @@ class ProductionMLSignalGenerator:
                 f"Risk Adj: {self.regime_context.get('risk_adjustment', 1.0):.1f}x"
             )
             
+            # Add news intelligence indicator
+            if self.news_intelligence:
+                regime_info += ", News Enhanced: ✅"
+            
             if signal.notes:
                 signal.notes = f"{signal.notes} | {regime_info}"
             else:
                 signal.notes = regime_info
             
             # Update signal source to indicate regime awareness
-            signal.signal_source = f"XGBOOST_FINBERT_REGIME_{self.regime_context.get('regime', 'UNKNOWN')}"
+            signal.signal_source = f"ADVANCED_SENTIMENT_REGIME_{self.regime_context.get('regime', 'UNKNOWN')}"
             
             return signal
             
@@ -326,13 +723,18 @@ class ProductionMLSignalGenerator:
                     "avg_confidence": 0.0,
                     "confidence_sum": 0.0,
                     "avg_final_score": 0.0,
-                    "final_score_sum": 0.0
+                    "final_score_sum": 0.0,
+                    "news_enhanced_signals": 0  # NEWS: Track news enhancement
                 }
             
             regime_stats = self.model_performance["regime_performance"][regime]
             regime_stats["signals_generated"] += 1
             regime_stats["confidence_sum"] += signal.ml_confidence
             regime_stats["avg_confidence"] = regime_stats["confidence_sum"] / regime_stats["signals_generated"]
+            
+            # Track news enhancement
+            if hasattr(signal, 'notes') and 'News Enhanced' in signal.notes:
+                regime_stats["news_enhanced_signals"] += 1
             
             if signal.final_score:
                 regime_stats["final_score_sum"] += signal.final_score
@@ -349,7 +751,7 @@ class ProductionMLSignalGenerator:
             List of stock opportunities sorted by ML potential with regime considerations
         """
         try:
-            current_regime = self.regime_context.get("regime", "SIDEWAYS_CHOPPY")
+            current_regime = self.regime_context.get("regime", "SIDEWAYS")
             logger.info(f"📋 Running regime-aware pre-market analysis on Nifty 100 (Regime: {current_regime})...")
             
             # Get all Nifty 100 stocks
@@ -371,13 +773,24 @@ class ProductionMLSignalGenerator:
                     gap_pct = ((quote["ltp"] - quote["prev_close"]) / quote["prev_close"]) * 100
                     volume_ratio = quote.get("volume", 1) / 1000000  # Normalize volume
                     
-                    # Get news sentiment
-                    sentiment_data = market_data.get("sentiment", {})
-                    sentiment_score = sentiment_data.get("sentiment_score", 0.0)
+                    # Get news sentiment (enhanced if available)
+                    if self.news_intelligence:
+                        try:
+                            # Quick news sentiment check
+                            news_sentiment_data = await self._get_comprehensive_news_sentiment(symbol)
+                            sentiment_score = news_sentiment_data.get("symbol_specific_sentiment", 0.0)
+                            news_impact = news_sentiment_data.get("news_impact_score", 0.0)
+                        except:
+                            sentiment_score = 0.0
+                            news_impact = 0.0
+                    else:
+                        sentiment_data = market_data.get("sentiment", {})
+                        sentiment_score = sentiment_data.get("sentiment_score", 0.0)
+                        news_impact = 0.0
                     
-                    # Regime-aware opportunity scoring
-                    opportunity_score = self._calculate_regime_aware_opportunity_score(
-                        gap_pct, volume_ratio, sentiment_score, current_regime
+                    # Regime-aware opportunity scoring (enhanced with news)
+                    opportunity_score = self._calculate_regime_aware_opportunity_score_with_news(
+                        gap_pct, volume_ratio, sentiment_score, news_impact, current_regime
                     )
                     
                     opportunities.append({
@@ -386,10 +799,12 @@ class ProductionMLSignalGenerator:
                         "gap_percentage": gap_pct,
                         "volume_ratio": volume_ratio,
                         "sentiment_score": sentiment_score,
+                        "news_impact_score": news_impact,  # NEWS: Add news impact
                         "current_price": quote["ltp"],
                         "sector": self.stock_universe.get_sector(symbol),
                         "market_data": market_data,
-                        "regime_score": opportunity_score
+                        "regime_score": opportunity_score,
+                        "news_enhanced": news_impact > 0.1  # NEWS: Flag news enhancement
                     })
                     
                     processed += 1
@@ -406,9 +821,11 @@ class ProductionMLSignalGenerator:
             # Sort by regime-aware opportunity score
             opportunities.sort(key=lambda x: x["regime_score"], reverse=True)
             
-            logger.info(f"✅ Analyzed {len(opportunities)} stocks, top 10 regime-aware opportunities:")
+            news_enhanced = len([o for o in opportunities[:10] if o.get("news_enhanced", False)])
+            logger.info(f"✅ Analyzed {len(opportunities)} stocks, top 10 regime-aware opportunities (News Enhanced: {news_enhanced}):")
             for i, opp in enumerate(opportunities[:10]):
-                logger.info(f"  {i+1}. {opp['symbol']} - Regime Score: {opp['regime_score']:.2f} "
+                news_indicator = "📰" if opp.get("news_enhanced", False) else ""
+                logger.info(f"  {i+1}. {opp['symbol']} {news_indicator} - Score: {opp['regime_score']:.2f} "
                           f"Gap: {opp['gap_percentage']:.1f}% Sentiment: {opp['sentiment_score']:.2f}")
             
             return opportunities
@@ -417,81 +834,95 @@ class ProductionMLSignalGenerator:
             logger.error(f"Regime-aware opportunity analysis failed: {e}")
             return []
     
-    def _calculate_regime_aware_opportunity_score(self, gap_pct: float, volume_ratio: float, 
-                                                sentiment_score: float, regime: str) -> float:
-        """Calculate opportunity score with regime-specific weightings"""
+    def _calculate_regime_aware_opportunity_score_with_news(self, gap_pct: float, volume_ratio: float, 
+                                                          sentiment_score: float, news_impact: float, regime: str) -> float:
+        """Calculate opportunity score with regime-specific weightings + news intelligence"""
         try:
             # Base scoring weights
             gap_weight = 0.4
             volume_weight = 0.3
             sentiment_weight = 0.3
+            news_weight = 0.0  # Will be set based on regime
+            
+            # Get regime configuration
+            config = self.regime_configs.get(regime, self.regime_configs["SIDEWAYS"])
+            news_weight = config.get("news_weight", 0.25)
+            
+            # Adjust weights to include news (reduce others proportionally)
+            if news_impact > 0:
+                total_base_weight = gap_weight + volume_weight + sentiment_weight
+                adjustment_factor = (1.0 - news_weight) / total_base_weight
+                gap_weight *= adjustment_factor
+                volume_weight *= adjustment_factor
+                sentiment_weight *= adjustment_factor
             
             # Regime-specific adjustments
-            if regime == "TRENDING_BULLISH":
-                gap_weight = 0.5    # Higher weight on momentum
-                volume_weight = 0.3
-                sentiment_weight = 0.2
-            elif regime == "TRENDING_BEARISH":
-                gap_weight = 0.5
-                volume_weight = 0.3
-                sentiment_weight = 0.2
-            elif regime == "SIDEWAYS_CHOPPY":
-                gap_weight = 0.2    # Lower weight on momentum
-                volume_weight = 0.4  # Higher weight on volume
-                sentiment_weight = 0.4  # Higher weight on sentiment
+            if regime == "BULLISH":
+                gap_weight = gap_weight * 1.25    # Higher weight on momentum
+                news_weight = min(news_weight * 1.2, 0.5)  # Boost news weight in trending markets
+            elif regime == "BEARISH":
+                gap_weight = gap_weight * 1.25
+                news_weight = min(news_weight * 1.3, 0.5)  # Even higher news weight in bearish trends
+            elif regime == "SIDEWAYS":
+                volume_weight = volume_weight * 1.3  # Higher weight on volume
+                sentiment_weight = sentiment_weight * 1.2  # Higher weight on sentiment
+                news_weight = min(news_weight * 1.4, 0.6)  # News very important in choppy markets
             elif regime == "GAP_DAY":
-                gap_weight = 0.6    # Much higher weight on gaps
-                volume_weight = 0.25
-                sentiment_weight = 0.15
+                gap_weight = gap_weight * 1.5    # Much higher weight on gaps
+                news_weight = min(news_weight * 1.6, 0.7)  # News critical on gap days
             elif regime == "HIGH_VOLATILITY":
-                gap_weight = 0.3
-                volume_weight = 0.4
-                sentiment_weight = 0.3
-            elif regime == "LOW_VOLATILITY":
-                gap_weight = 0.3
-                volume_weight = 0.3
-                sentiment_weight = 0.4
+                news_weight = min(news_weight * 1.8, 0.8)  # News extremely important in volatile markets
             
             # Calculate weighted score
             opportunity_score = (
                 abs(gap_pct) * gap_weight +
                 min(volume_ratio, 3.0) * volume_weight +
-                abs(sentiment_score) * sentiment_weight
+                abs(sentiment_score) * sentiment_weight +
+                news_impact * news_weight  # NEWS: Add news impact
             )
             
             # Apply regime confidence multiplier
             regime_confidence = self.regime_context.get("confidence", 0.5)
             confidence_multiplier = 0.8 + (regime_confidence * 0.4)  # 0.8 to 1.2
             
+            # News boost for high-impact news
+            if news_impact > 0.5:
+                news_boost = 1.0 + (news_impact * 0.3)  # Up to 30% boost for high-impact news
+                opportunity_score *= news_boost
+            
             return opportunity_score * confidence_multiplier
             
         except Exception as e:
-            logger.error(f"Regime-aware scoring failed: {e}")
+            logger.error(f"Regime-aware scoring with news failed: {e}")
             return abs(gap_pct) * 0.4 + min(volume_ratio, 3.0) * 0.3 + abs(sentiment_score) * 0.3
     
-    async def _analyze_stock_with_ml(self, symbol: str, stock_data: Dict) -> Optional[SignalRecord]:
+    async def _analyze_stock_with_simplified_ml_and_news(self, symbol: str, stock_data: Dict) -> Optional[SignalRecord]:
         """
-        Analyze individual stock using regime-aware ML pipeline
+        Analyze individual stock using simplified ML pipeline with optional news enhancement
         
         Args:
             symbol: Stock symbol
             stock_data: Pre-computed stock data from opportunity analysis
             
         Returns:
-            SignalRecord if regime-adjusted ML confidence is high enough
+            SignalRecord if ML confidence is high enough, with optional news enhancement
         """
         try:
-            current_regime = self.regime_context.get("regime", "SIDEWAYS_CHOPPY")
-            logger.debug(f"🤖 Regime-aware ML analysis for {symbol} (Regime: {current_regime})...")
+            current_regime = self.regime_context.get("regime", "SIDEWAYS")
+            logger.debug(f"🤖 Simplified ML + News analysis for {symbol} (Regime: {current_regime})...")
             
             market_data = stock_data["market_data"]
             quote = market_data["quote"]
             
             # Get historical data for technical analysis
             try:
-                historical_data = await self.market_data.zerodha.get_historical_data(
-                    symbol, "minute", datetime.now() - timedelta(days=30)
-                )
+                if hasattr(self.market_data, 'zerodha'):
+                    historical_data = await self.market_data.zerodha.get_historical_data(
+                        symbol, "minute", datetime.now() - timedelta(days=30)
+                    )
+                else:
+                    # Fallback to mock historical data
+                    historical_data = []
             except Exception as e:
                 logger.debug(f"Historical data unavailable for {symbol}: {e}")
                 historical_data = []
@@ -503,12 +934,12 @@ class ProductionMLSignalGenerator:
             
             # Convert to DataFrame
             df = pd.DataFrame([{
-                'timestamp': h.timestamp,
-                'open': h.open,
-                'high': h.high,
-                'low': h.low,
-                'close': h.close,
-                'volume': h.volume
+                'timestamp': h.timestamp if hasattr(h, 'timestamp') else datetime.now(),
+                'open': h.open if hasattr(h, 'open') else quote["ltp"],
+                'high': h.high if hasattr(h, 'high') else quote["ltp"],
+                'low': h.low if hasattr(h, 'low') else quote["ltp"],
+                'close': h.close if hasattr(h, 'close') else quote["ltp"],
+                'volume': h.volume if hasattr(h, 'volume') else quote.get("volume", 0)
             } for h in historical_data])
             
             # Engineer features
@@ -519,8 +950,12 @@ class ProductionMLSignalGenerator:
                 'change_percent': stock_data["gap_percentage"]
             }
             
-            # Enhanced sentiment analysis using FinBERT
-            news_sentiment = await self._get_enhanced_sentiment(symbol)
+            # SIMPLIFIED: Use simplified news sentiment analysis
+            news_sentiment = await self._get_simplified_news_sentiment(symbol)
+            
+            # Track news enhancement
+            if news_sentiment.get("enhanced_by_news_intelligence", False):
+                self.model_performance["news_enhanced_predictions"] += 1
             
             # Get Nifty data for correlation
             nifty_data = await self._get_nifty_correlation_data()
@@ -537,24 +972,29 @@ class ProductionMLSignalGenerator:
             # Add regime-specific features
             features = self._add_regime_features(features, current_regime)
             
+            # SIMPLIFIED: Add basic news features
+            features = self._add_simplified_news_features(features, news_sentiment, current_regime)
+            
             # ML prediction with regime considerations
             ml_probability, prediction_details = self.ml_model.predict_signal_probability(features)
             
-            # Apply regime-specific confidence adjustment
-            adjusted_probability = self._apply_regime_confidence_adjustment(ml_probability, current_regime)
+            # SIMPLIFIED: Apply basic news-enhanced confidence adjustment
+            adjusted_probability = self._apply_simplified_news_confidence_adjustment(
+                ml_probability, news_sentiment, current_regime
+            )
             
             # Track prediction
             self.model_performance["total_predictions"] += 1
             if adjusted_probability > self.min_ml_confidence:
                 self.model_performance["high_confidence_predictions"] += 1
             
-            # Check regime-adjusted ML confidence threshold
+            # Check ML confidence threshold
             if adjusted_probability < self.min_ml_confidence:
-                logger.debug(f"{symbol} Regime-adjusted ML confidence {adjusted_probability:.1%} below threshold {self.min_ml_confidence:.1%}")
+                logger.debug(f"{symbol} ML confidence {adjusted_probability:.1%} below threshold {self.min_ml_confidence:.1%}")
                 return None
             
             # Determine signal direction based on features and ML output
-            direction = self._determine_signal_direction(features, adjusted_probability, current_regime)
+            direction = self._determine_signal_direction_with_simplified_news(features, adjusted_probability, news_sentiment, current_regime)
             
             # Calculate price levels using regime-enhanced logic
             entry_price = quote["ltp"]
@@ -567,7 +1007,7 @@ class ProductionMLSignalGenerator:
                 entry_price, stop_loss, adjusted_probability, features, current_regime
             )
             
-            # Create comprehensive signal record with regime awareness
+            # Create comprehensive signal record with regime awareness + optional news enhancement
             signal = SignalRecord(
                 signal_id=f"ML_{current_regime}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}",
                 timestamp=datetime.now(),
@@ -576,28 +1016,309 @@ class ProductionMLSignalGenerator:
                 entry_price=entry_price,
                 stop_loss=stop_loss,
                 target_price=target_price,
-                ml_confidence=adjusted_probability,  # Use regime-adjusted confidence
+                ml_confidence=adjusted_probability,  # Use news-enhanced confidence
                 technical_score=features.get("technical_composite_score", 0.0),
-                sentiment_score=news_sentiment.get("finbert_score", 0.0),
+                sentiment_score=news_sentiment.get("symbol_specific_sentiment", news_sentiment.get("finbert_score", 0.0)),
                 macro_score=features.get("nifty_performance", 0.0),
-                final_score=adjusted_probability,  # Regime-adjusted ML probability is our final score
+                final_score=adjusted_probability,  # News-enhanced ML probability is our final score
                 indicators=self._create_technical_indicators_from_features(features),
                 market_context=await self._create_enhanced_market_context(features),
                 pre_market=self._create_pre_market_data_from_features(features, news_sentiment),
                 risk_reward_ratio=self._calculate_risk_reward_ratio(entry_price, stop_loss, target_price, direction),
                 position_size_suggested=position_size,
                 capital_at_risk=abs(entry_price - stop_loss) * position_size,
-                model_version="v1.1_ML_regime_aware",
-                signal_source=f"XGBOOST_FINBERT_REGIME_{current_regime}",
-                notes=f"Regime: {current_regime}, Original ML: {ml_probability:.1%}, Adjusted: {adjusted_probability:.1%}, Top features: {list(prediction_details.get('feature_contributions', {}).keys())[:3]}"
+                model_version="v1.2_simplified_ml_news_regime_aware",
+                signal_source=f"SIMPLIFIED_ML_{current_regime}",
+                notes=self._create_simplified_signal_notes(symbol, current_regime, ml_probability, adjusted_probability, news_sentiment, prediction_details)
             )
             
-            logger.debug(f"✅ {symbol} Regime-aware ML Signal: {direction.value} Confidence: {adjusted_probability:.1%}")
+            logger.debug(f"✅ {symbol} Simplified ML Signal: {direction.value} Confidence: {adjusted_probability:.1%}")
             return signal
             
         except Exception as e:
-            logger.error(f"Regime-aware ML analysis failed for {symbol}: {e}")
-            return None
+            logger.error(f"Simplified ML analysis failed for {symbol}: {e}")
+            return await self._fallback_signal_analysis(symbol, stock_data)
+    
+    def _add_simplified_news_features(self, features: Dict, news_sentiment: Dict, regime: str) -> Dict:
+        """Add basic news-specific features to the feature set"""
+        try:
+            news_features = {
+                "news_sentiment_score": news_sentiment.get("symbol_specific_sentiment", 0.0),
+                "news_impact_score": news_sentiment.get("news_impact_score", 0.0),
+                "news_count": min(news_sentiment.get("news_count", 0), 10),  # Cap at 10
+                "breaking_news_detected": 1.0 if news_sentiment.get("breaking_news_detected", False) else 0.0,
+                "high_impact_events_count": len(news_sentiment.get("high_impact_events", [])),
+                "overall_market_sentiment": news_sentiment.get("overall_market_sentiment", 0.0),
+                "news_sources_count": min(news_sentiment.get("news_sources_count", 0), 10),  # Cap at 10
+                "positive_news_sentiment": 1.0 if news_sentiment.get("symbol_specific_sentiment", 0.0) > 0.1 else 0.0,
+                "negative_news_sentiment": 1.0 if news_sentiment.get("symbol_specific_sentiment", 0.0) < -0.1 else 0.0,
+                "strong_news_sentiment": 1.0 if abs(news_sentiment.get("symbol_specific_sentiment", 0.0)) > 0.5 else 0.0,
+                "news_intelligence_available": 1.0 if news_sentiment.get("enhanced_by_news_intelligence", False) else 0.0
+            }
+            
+            features.update(news_features)
+            return features
+            
+        except Exception as e:
+            logger.error(f"Failed to add simplified news features: {e}")
+            return features
+    
+    def _apply_simplified_news_confidence_adjustment(self, ml_probability: float, news_sentiment: Dict, regime: str) -> float:
+        """Apply basic news-enhanced confidence adjustment to ML probability"""
+        try:
+            # Start with base regime adjustment
+            adjusted_probability = self._apply_regime_confidence_adjustment(ml_probability, regime)
+            
+            # Apply news enhancement
+            if news_sentiment.get("enhanced_by_news_intelligence", False):
+                news_impact = news_sentiment.get("news_impact_score", 0.0)
+                symbol_sentiment = news_sentiment.get("symbol_specific_sentiment", 0.0)
+                
+                # News confidence boost/penalty based on sentiment alignment with ML prediction
+                if (ml_probability > 0.5 and symbol_sentiment > 0.1) or (ml_probability < 0.5 and symbol_sentiment < -0.1):
+                    # News sentiment aligns with ML prediction - boost confidence
+                    news_boost = news_impact * 0.1  # Up to 10% boost
+                    adjusted_probability += news_boost
+                elif abs(symbol_sentiment) > 0.3:
+                    # Strong opposing news sentiment - reduce confidence
+                    news_penalty = abs(symbol_sentiment) * 0.05  # Up to 5% penalty
+                    adjusted_probability -= news_penalty
+                
+                # Breaking news additional boost
+                if news_sentiment.get("breaking_news_detected", False):
+                    breaking_news_boost = 0.05  # 5% boost for breaking news
+                    adjusted_probability += breaking_news_boost
+                
+                # Track news accuracy boost
+                if news_boost > 0:
+                    self.model_performance["news_accuracy_boost"] = max(
+                        self.model_performance["news_accuracy_boost"], 
+                        news_boost
+                    )
+            
+            # Ensure probability stays within bounds
+            return max(0.0, min(1.0, adjusted_probability))
+            
+        except Exception as e:
+            logger.error(f"Failed to apply simplified news confidence adjustment: {e}")
+            return ml_probability
+    
+    def _apply_regime_confidence_adjustment(self, ml_probability: float, regime: str) -> float:
+        """Apply regime-specific confidence adjustments to ML probability"""
+        try:
+            # Get regime confidence from context
+            regime_confidence = self.regime_context.get("confidence", 0.5)
+            
+            # Apply regime-specific adjustments
+            if regime in ["BULLISH", "BEARISH", "GAP_DAY"]:
+                # In trending/gap markets, boost ML confidence
+                confidence_boost = 0.05 * regime_confidence
+                adjusted_probability = ml_probability + confidence_boost
+            elif regime == "HIGH_VOLATILITY":
+                # In volatile markets, be more conservative
+                confidence_penalty = 0.1 * regime_confidence
+                adjusted_probability = ml_probability - confidence_penalty
+            elif regime == "LOW_VOLATILITY":
+                # In low volatility, slight boost
+                confidence_boost = 0.02 * regime_confidence
+                adjusted_probability = ml_probability + confidence_boost
+            else:  # SIDEWAYS
+                # In choppy markets, slight penalty
+                confidence_penalty = 0.03 * regime_confidence
+                adjusted_probability = ml_probability - confidence_penalty
+            
+            # Ensure probability stays within bounds
+            return max(0.0, min(1.0, adjusted_probability))
+            
+        except Exception as e:
+            logger.error(f"Failed to apply regime confidence adjustment: {e}")
+            return ml_probability
+    
+    def _determine_signal_direction_with_simplified_news(self, features: Dict, ml_probability: float, news_sentiment: Dict, regime: str) -> SignalDirection:
+        """Determine signal direction based on features, ML output, news sentiment, and regime"""
+        try:
+            # Primary signal from ML probability (>0.5 = BUY, <0.5 = SELL)
+            if ml_probability > 0.5:
+                base_direction = SignalDirection.BUY
+            else:
+                base_direction = SignalDirection.SELL
+                
+            # Confirm with technical indicators
+            technical_bullish_signals = (
+                features.get("above_sma20", 0) +
+                features.get("macd_bullish", 0) +
+                features.get("high_volume", 0) +
+                features.get("positive_sentiment", 0)
+            )
+            
+            # NEWS: Add news sentiment confirmation
+            news_bullish_signals = 0
+            if news_sentiment.get("enhanced_by_news_intelligence", False):
+                symbol_sentiment = news_sentiment.get("symbol_specific_sentiment", 0.0)
+                if symbol_sentiment > 0.2:
+                    news_bullish_signals += 2  # Strong positive news
+                elif symbol_sentiment > 0.1:
+                    news_bullish_signals += 1  # Moderate positive news
+                elif symbol_sentiment < -0.2:
+                    news_bullish_signals -= 2  # Strong negative news
+                elif symbol_sentiment < -0.1:
+                    news_bullish_signals -= 1  # Moderate negative news
+                
+                # Breaking news override
+                if news_sentiment.get("breaking_news_detected", False):
+                    if abs(symbol_sentiment) > 0.4:
+                        # Strong breaking news can override technical signals
+                        if symbol_sentiment > 0.4:
+                            news_bullish_signals += 3
+                        elif symbol_sentiment < -0.4:
+                            news_bullish_signals -= 3
+            
+            total_bullish_signals = technical_bullish_signals + news_bullish_signals
+            
+            # Regime-specific direction adjustments
+            regime_strategy = self.regime_context.get("trading_strategy", "MEAN_REVERSION")
+            
+            if regime == "BEARISH" and regime_strategy == "MOMENTUM":
+                # In bearish trends with momentum strategy, bias towards SELL
+                if base_direction == SignalDirection.BUY and total_bullish_signals < 4:
+                    logger.debug(f"Bearish regime + news suggests caution for BUY signal")
+            elif regime == "BULLISH" and regime_strategy == "MOMENTUM":
+                # In bullish trends with momentum strategy, bias towards BUY
+                if base_direction == SignalDirection.SELL and total_bullish_signals > 0:
+                    logger.debug(f"Bullish regime + news suggests caution for SELL signal")
+            elif regime == "HIGH_VOLATILITY":
+                # In high volatility, require stronger confirmation (including news)
+                required_confirmation = 4 if news_sentiment.get("enhanced_by_news_intelligence", False) else 3
+                if base_direction == SignalDirection.BUY and total_bullish_signals < required_confirmation:
+                    logger.debug("High volatility regime requires stronger confirmation for BUY (including news)")
+                elif base_direction == SignalDirection.SELL and total_bullish_signals > 1:
+                    logger.debug("High volatility regime requires stronger confirmation for SELL (including news)")
+            
+            return base_direction
+            
+        except Exception as e:
+            logger.error(f"Direction determination with news failed: {e}")
+            return SignalDirection.BUY  # Default
+    
+    def _create_enhanced_signal_notes(self, symbol: str, regime: str, original_ml: float, adjusted_ml: float, news_sentiment: Dict, prediction_details: Any) -> str:
+        """Create comprehensive signal notes with news intelligence information"""
+        try:
+            notes_parts = []
+            
+            # Regime information
+            notes_parts.append(f"Regime: {regime}")
+            notes_parts.append(f"ML: {original_ml:.1%}→{adjusted_ml:.1%}")
+            
+            # News intelligence information
+            if news_sentiment.get("enhanced_by_news_intelligence", False):
+                news_impact = news_sentiment.get("news_impact_score", 0.0)
+                symbol_sentiment = news_sentiment.get("symbol_specific_sentiment", 0.0)
+                news_count = news_sentiment.get("news_count", 0)
+                
+                notes_parts.append(f"News Enhanced: ✅")
+                notes_parts.append(f"News Impact: {news_impact:.2f}")
+                notes_parts.append(f"News Sentiment: {symbol_sentiment:.2f}")
+                notes_parts.append(f"Articles: {news_count}")
+                
+                if news_sentiment.get("breaking_news_detected", False):
+                    notes_parts.append("Breaking News: 🚨")
+                
+                if news_sentiment.get("latest_headline"):
+                    headline = news_sentiment["latest_headline"][:50] + "..." if len(news_sentiment["latest_headline"]) > 50 else news_sentiment["latest_headline"]
+                    notes_parts.append(f"Latest: {headline}")
+            else:
+                notes_parts.append("News Enhanced: ❌")
+            
+            # Top ML features
+            if isinstance(prediction_details, dict) and "feature_contributions" in prediction_details:
+                top_features = list(prediction_details["feature_contributions"].keys())[:3]
+                notes_parts.append(f"Top ML Features: {top_features}")
+            
+            return " | ".join(notes_parts)
+            
+        except Exception as e:
+            logger.error(f"Failed to create enhanced signal notes: {e}")
+            return f"Regime: {regime}, ML: {original_ml:.1%}→{adjusted_ml:.1%}, Error in notes generation"
+    
+    # ================================================================
+    # EXISTING METHODS (Enhanced with News Intelligence Support)
+    # ================================================================
+    
+    async def _get_enhanced_sentiment(self, symbol: str) -> Dict:
+        """Get enhanced sentiment analysis using the simplified FinBERT sentiment system (fallback method)"""
+        try:
+            # Get recent news for the symbol
+            news_data = []
+            
+            # Try to get news from market data service
+            try:
+                if hasattr(self.market_data, 'get_symbol_news'):
+                    news_response = await self.market_data.get_symbol_news(symbol)
+                    if news_response and "articles" in news_response:
+                        news_data = news_response["articles"][:5]  # Top 5 articles
+            except:
+                pass
+            
+            if news_data:
+                # Use simplified sentiment analyzer
+                sentiment_results = []
+                for article in news_data:
+                    text = f"{article.get('title', '')} {article.get('description', '')}"
+                    if text.strip():
+                        # Use simplified sentiment analyzer
+                        if hasattr(self.sentiment_analyzer, 'analyze_text'):
+                            result = self.sentiment_analyzer.analyze_text(text, source="news")
+                            sentiment_results.append({
+                                "finbert_score": result.finbert_score,
+                                "finbert_confidence": result.finbert_confidence,
+                                "sentiment_class": result.sentiment_class,
+                                "strength": result.strength
+                            })
+                
+                if sentiment_results:
+                    # Aggregate sentiment scores
+                    avg_finbert = np.mean([r["finbert_score"] for r in sentiment_results])
+                    avg_confidence = np.mean([r["finbert_confidence"] for r in sentiment_results])
+                    
+                    # Use FinBERT score as the primary sentiment score
+                    sentiment_score = avg_finbert
+                    
+                    return {
+                        "finbert_score": avg_finbert,
+                        "finbert_confidence": avg_confidence,
+                        "weighted_score": sentiment_score,  # Use FinBERT score as weighted score
+                        "news_count": len(news_data),
+                        "sentiment_score": sentiment_score,
+                        "latest_headline": news_data[0].get('title', '') if news_data else '',
+                        "enhanced_by_news_intelligence": False  # Mark as fallback
+                    }
+            
+            # Fallback: neutral sentiment
+            return {
+                "finbert_score": 0.0,
+                "finbert_confidence": 0.0,
+                "weighted_score": 0.0,
+                "news_count": 0,
+                "sentiment_score": 0.0,
+                "latest_headline": None,
+                "enhanced_by_news_intelligence": False
+            }
+            
+        except Exception as e:
+            logger.error(f"Enhanced sentiment analysis failed for {symbol}: {e}")
+            return {
+                "finbert_score": 0.0,
+                "finbert_confidence": 0.0,
+                "weighted_score": 0.0,
+                "news_count": 0,
+                "sentiment_score": 0.0,
+                "latest_headline": None,
+                "enhanced_by_news_intelligence": False
+            }
+    
+    # ================================================================
+    # Helper Methods for Fallback and Feature Engineering (Unchanged)
+    # ================================================================
     
     async def _fallback_signal_analysis(self, symbol: str, stock_data: Dict) -> Optional[SignalRecord]:
         """Fallback signal analysis when ML features are unavailable"""
@@ -613,11 +1334,17 @@ class ProductionMLSignalGenerator:
             sentiment_strength = abs(sentiment_score)
             volume_score = min(stock_data["volume_ratio"], 2.0) / 2.0
             
+            # NEWS: Add news enhancement to fallback
+            news_boost = 0.0
+            if stock_data.get("news_enhanced", False):
+                news_impact = stock_data.get("news_impact_score", 0.0)
+                news_boost = news_impact * 0.2  # 20% boost from news
+            
             # Combine scores
-            fallback_score = (momentum_score * 0.5 + sentiment_strength * 0.3 + volume_score * 0.2)
+            fallback_score = (momentum_score * 0.5 + sentiment_strength * 0.3 + volume_score * 0.2) + news_boost
             
             # Apply regime adjustment
-            current_regime = self.regime_context.get("regime", "SIDEWAYS_CHOPPY")
+            current_regime = self.regime_context.get("regime", "SIDEWAYS")
             regime_multiplier = self._get_regime_fallback_multiplier(current_regime)
             adjusted_score = fallback_score * regime_multiplier
             
@@ -659,9 +1386,9 @@ class ProductionMLSignalGenerator:
                 risk_reward_ratio=self._calculate_risk_reward_ratio(entry_price, stop_loss, target_price, direction),
                 position_size_suggested=position_size,
                 capital_at_risk=abs(entry_price - stop_loss) * position_size,
-                model_version="v1.1_fallback_regime_aware",
+                model_version="v1.2_fallback_regime_news_aware",
                 signal_source=f"FALLBACK_REGIME_{current_regime}",
-                notes=f"Fallback analysis - Regime: {current_regime}, Score: {adjusted_score:.1%}"
+                notes=f"Fallback analysis - Regime: {current_regime}, Score: {adjusted_score:.1%}, News: {'✅' if stock_data.get('news_enhanced', False) else '❌'}"
             )
             
             return signal
@@ -673,9 +1400,9 @@ class ProductionMLSignalGenerator:
     def _get_regime_fallback_multiplier(self, regime: str) -> float:
         """Get fallback score multiplier for regime"""
         multipliers = {
-            "TRENDING_BULLISH": 1.2,
-            "TRENDING_BEARISH": 1.1,
-            "SIDEWAYS_CHOPPY": 0.8,
+            "BULLISH": 1.2,
+            "BEARISH": 1.1,
+            "SIDEWAYS": 0.8,
             "GAP_DAY": 1.3,
             "HIGH_VOLATILITY": 0.6,
             "LOW_VOLATILITY": 1.0
@@ -693,7 +1420,7 @@ class ProductionMLSignalGenerator:
             }
             
             # Set all other regime indicators to 0
-            all_regimes = ["TRENDING_BULLISH", "TRENDING_BEARISH", "SIDEWAYS_CHOPPY", "GAP_DAY", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+            all_regimes = ["BULLISH", "BEARISH", "SIDEWAYS", "GAP_DAY", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
             for r in all_regimes:
                 if r != regime:
                     regime_features[f"regime_{r.lower()}"] = 0.0
@@ -704,37 +1431,6 @@ class ProductionMLSignalGenerator:
         except Exception as e:
             logger.error(f"Failed to add regime features: {e}")
             return features
-    
-    def _apply_regime_confidence_adjustment(self, ml_probability: float, regime: str) -> float:
-        """Apply regime-specific confidence adjustments to ML probability"""
-        try:
-            # Get regime confidence from context
-            regime_confidence = self.regime_context.get("confidence", 0.5)
-            
-            # Apply regime-specific adjustments
-            if regime in ["TRENDING_BULLISH", "TRENDING_BEARISH", "GAP_DAY"]:
-                # In trending/gap markets, boost ML confidence
-                confidence_boost = 0.05 * regime_confidence
-                adjusted_probability = ml_probability + confidence_boost
-            elif regime == "HIGH_VOLATILITY":
-                # In volatile markets, be more conservative
-                confidence_penalty = 0.1 * regime_confidence
-                adjusted_probability = ml_probability - confidence_penalty
-            elif regime == "LOW_VOLATILITY":
-                # In low volatility, slight boost
-                confidence_boost = 0.02 * regime_confidence
-                adjusted_probability = ml_probability + confidence_boost
-            else:  # SIDEWAYS_CHOPPY
-                # In choppy markets, slight penalty
-                confidence_penalty = 0.03 * regime_confidence
-                adjusted_probability = ml_probability - confidence_penalty
-            
-            # Ensure probability stays within bounds
-            return max(0.0, min(1.0, adjusted_probability))
-            
-        except Exception as e:
-            logger.error(f"Failed to apply regime confidence adjustment: {e}")
-            return ml_probability
     
     def _determine_signal_direction(self, features: Dict, ml_probability: float, regime: str) -> SignalDirection:
         """Determine signal direction based on features, ML output, and regime"""
@@ -756,11 +1452,11 @@ class ProductionMLSignalGenerator:
             # Regime-specific direction adjustments
             regime_strategy = self.regime_context.get("trading_strategy", "MEAN_REVERSION")
             
-            if regime == "TRENDING_BEARISH" and regime_strategy == "MOMENTUM":
+            if regime == "BEARISH" and regime_strategy == "MOMENTUM":
                 # In bearish trends with momentum strategy, bias towards SELL
                 if base_direction == SignalDirection.BUY and technical_bullish_signals < 3:
                     logger.debug(f"Bearish regime suggests caution for BUY signal")
-            elif regime == "TRENDING_BULLISH" and regime_strategy == "MOMENTUM":
+            elif regime == "BULLISH" and regime_strategy == "MOMENTUM":
                 # In bullish trends with momentum strategy, bias towards BUY
                 if base_direction == SignalDirection.SELL and technical_bullish_signals > 1:
                     logger.debug(f"Bullish regime suggests caution for SELL signal")
@@ -789,7 +1485,7 @@ class ProductionMLSignalGenerator:
             atr_percent = features.get("atr_percent", 2.0)
             
             # Get regime configuration
-            config = self.regime_configs.get(regime, self.regime_configs["SIDEWAYS_CHOPPY"])
+            config = self.regime_configs.get(regime, self.regime_configs["SIDEWAYS"])
             
             # Adjust stop loss based on ML confidence, volatility, and regime
             confidence_multiplier = 0.8 + (ml_confidence * 0.4)  # 0.8 to 1.2
@@ -809,7 +1505,7 @@ class ProductionMLSignalGenerator:
                 # Tighter stops and more conservative targets in volatile markets
                 stop_distance_percent *= 0.8
                 target_rr_ratio *= 0.9
-            elif regime in ["TRENDING_BULLISH", "TRENDING_BEARISH"]:
+            elif regime in ["BULLISH", "BEARISH"]:
                 # Wider targets in trending markets
                 target_rr_ratio *= 1.2
             elif regime == "GAP_DAY":
@@ -849,7 +1545,7 @@ class ProductionMLSignalGenerator:
             base_risk = 2500  # ₹2500 base risk
             
             # Get regime configuration
-            config = self.regime_configs.get(regime, self.regime_configs["SIDEWAYS_CHOPPY"])
+            config = self.regime_configs.get(regime, self.regime_configs["SIDEWAYS"])
             
             # Adjust risk based on ML confidence
             confidence_risk_multiplier = 0.6 + (ml_confidence * 0.8)  # 0.6 to 1.4
@@ -892,67 +1588,27 @@ class ProductionMLSignalGenerator:
     # Enhanced Helper Methods
     # ================================================================
     
-    async def _get_enhanced_sentiment(self, symbol: str) -> Dict:
-        """Get enhanced sentiment analysis using FinBERT"""
-        try:
-            # Get news sentiment from market data service
-            sentiment_data = await self.market_data.news_service.get_symbol_sentiment(symbol)
-            
-            # Enhance with FinBERT analysis
-            relevant_news = sentiment_data.get("relevant_news", [])
-            
-            if relevant_news:
-                # Analyze with FinBERT
-                news_texts = [news.get("headline", "") + " " + news.get("content", "") 
-                             for news in relevant_news[:5]]
-                
-                finbert_results = self.sentiment_analyzer.analyze_news_batch(news_texts)
-                
-                # Aggregate FinBERT scores
-                finbert_scores = [r["finbert_score"] for r in finbert_results if "finbert_score" in r]
-                
-                if finbert_scores:
-                    avg_finbert_score = np.mean(finbert_scores)
-                    finbert_confidence = np.mean([abs(score) for score in finbert_scores])
-                else:
-                    avg_finbert_score = sentiment_data.get("sentiment_score", 0.0)
-                    finbert_confidence = 0.5
-            else:
-                avg_finbert_score = sentiment_data.get("sentiment_score", 0.0)
-                finbert_confidence = 0.5
-            
-            return {
-                "finbert_score": avg_finbert_score,
-                "finbert_confidence": finbert_confidence,
-                "news_count": sentiment_data.get("news_count", 0),
-                "latest_headline": sentiment_data.get("latest_headline"),
-                "sentiment_score": avg_finbert_score  # For compatibility
-            }
-            
-        except Exception as e:
-            logger.error(f"Enhanced sentiment analysis failed for {symbol}: {e}")
-            return {"finbert_score": 0.0, "finbert_confidence": 0.0, "news_count": 0, "sentiment_score": 0.0}
-    
     async def _get_nifty_correlation_data(self) -> pd.DataFrame:
         """Get Nifty data for correlation analysis"""
         try:
             # Try to get actual Nifty data
-            nifty_data = await self.market_data.get_live_market_data("NIFTY50")
+            if hasattr(self.market_data, 'get_live_market_data'):
+                nifty_data = await self.market_data.get_live_market_data("NIFTY50")
+                
+                if nifty_data and nifty_data.get("quote"):
+                    # Create simple DataFrame with current Nifty info
+                    nifty_quote = nifty_data["quote"]
+                    nifty_df = pd.DataFrame({
+                        'close': [nifty_quote.get("prev_close", 18500), nifty_quote.get("ltp", 18500)],
+                        'timestamp': [datetime.now() - timedelta(days=1), datetime.now()]
+                    })
+                    return nifty_df
             
-            if nifty_data and nifty_data.get("quote"):
-                # Create simple DataFrame with current Nifty info
-                nifty_quote = nifty_data["quote"]
-                nifty_df = pd.DataFrame({
-                    'close': [nifty_quote.get("prev_close", 18500), nifty_quote.get("ltp", 18500)],
-                    'timestamp': [datetime.now() - timedelta(days=1), datetime.now()]
-                })
-                return nifty_df
-            else:
-                # Fallback mock data
-                return pd.DataFrame({
-                    'close': [18500, 18525],
-                    'timestamp': [datetime.now() - timedelta(days=1), datetime.now()]
-                })
+            # Fallback mock data
+            return pd.DataFrame({
+                'close': [18500, 18525],
+                'timestamp': [datetime.now() - timedelta(days=1), datetime.now()]
+            })
                 
         except Exception as e:
             logger.error(f"Nifty correlation data failed: {e}")
@@ -1037,7 +1693,7 @@ class ProductionMLSignalGenerator:
         return PreMarketData(
             gap_percentage=features.get("price_gap_percent", 0.0),
             pre_market_volume=features.get("volume_ratio", 1.0) * 1000000,
-            news_sentiment_score=sentiment.get("finbert_score", 0.0),
+            news_sentiment_score=sentiment.get("symbol_specific_sentiment", sentiment.get("finbert_score", 0.0)),
             news_count=sentiment.get("news_count", 0),
             social_sentiment=None,
             analyst_rating_change=None
@@ -1055,7 +1711,7 @@ class ProductionMLSignalGenerator:
         )
     
     # ================================================================
-    # Model Management and Performance Tracking
+    # Model Management and Performance Tracking (Enhanced with News)
     # ================================================================
     
     async def retrain_model_if_needed(self):
@@ -1071,7 +1727,11 @@ class ProductionMLSignalGenerator:
                     logger.info("🔄 Initiating regime-aware model retraining...")
                     
                     # Collect new training data with regime information
-                    data_collector = TrainingDataCollector(self.market_data, self.signal_logger)
+                    data_collector = self._ml_components['TrainingDataCollector'](self.market_data, self.signal_logger)
+                    # Set feature engineer to avoid duplicate sentiment creation
+                    if hasattr(data_collector, 'set_feature_engineer'):
+                        data_collector.set_feature_engineer(self.feature_engineer)
+                    
                     training_data = await data_collector.collect_training_data(lookback_days=30)
                     
                     if len(training_data) > 100:
@@ -1082,8 +1742,9 @@ class ProductionMLSignalGenerator:
                         feature_columns = [col for col in training_data.columns 
                                          if col not in ['symbol', 'date', 'entry_price', 'max_future_gain', 'profitable']]
                         
-                        results = self.ml_model.train_model(training_data[feature_columns + ['profitable']])
-                        logger.info(f"✅ Regime-aware model retrained - New accuracy: {results['accuracy']:.1%}")
+                        if hasattr(self.ml_model, 'train'):
+                            results = self.ml_model.train(training_data[feature_columns + ['profitable']])
+                            logger.info(f"✅ Regime-aware model retrained - New accuracy: {results.get('weighted_ensemble_auc', 0.0):.1%}")
                     
         except Exception as e:
             logger.error(f"Regime-aware model retraining failed: {e}")
@@ -1092,13 +1753,13 @@ class ProductionMLSignalGenerator:
         """Add regime features to training data"""
         try:
             # Add regime features based on historical data (simplified for now)
-            all_regimes = ["TRENDING_BULLISH", "TRENDING_BEARISH", "SIDEWAYS_CHOPPY", "GAP_DAY", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+            all_regimes = ["BULLISH", "BEARISH", "SIDEWAYS", "GAP_DAY", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
             
             for regime in all_regimes:
                 training_data[f"regime_{regime.lower()}"] = 0.0  # Default to 0
             
             # For now, set current regime to 1 (in production, you'd classify historical regimes)
-            current_regime = self.regime_context.get("regime", "SIDEWAYS_CHOPPY")
+            current_regime = self.regime_context.get("regime", "SIDEWAYS")
             training_data[f"regime_{current_regime.lower()}"] = 1.0
             training_data["regime_confidence"] = self.regime_context.get("confidence", 0.5)
             training_data["regime_risk_adjustment"] = self.regime_context.get("risk_adjustment", 1.0)
@@ -1110,15 +1771,15 @@ class ProductionMLSignalGenerator:
             return training_data
     
     def get_regime_performance_summary(self) -> Dict:
-        """Get performance summary by regime"""
+        """Get performance summary by regime including news intelligence metrics"""
         try:
             return {
                 "current_regime": self.regime_context.get("regime", "UNKNOWN"),
                 "regime_confidence": self.regime_context.get("confidence", 0.5),
                 "trading_strategy": self.regime_context.get("trading_strategy", "MEAN_REVERSION"),
                 "regime_adjustments": self.regime_configs.get(
-                    self.regime_context.get("regime", "SIDEWAYS_CHOPPY"), 
-                    self.regime_configs["SIDEWAYS_CHOPPY"]
+                    self.regime_context.get("regime", "SIDEWAYS"), 
+                    self.regime_configs["SIDEWAYS"]
                 ),
                 "regime_performance": self.model_performance["regime_performance"],
                 "current_parameters": {
@@ -1128,17 +1789,29 @@ class ProductionMLSignalGenerator:
                 },
                 "daily_stats": {
                     "signals_generated_today": self.daily_signal_count,
+                    "news_enhanced_signals": self.news_enhanced_signals_count,
+                    "breaking_news_signals": self.breaking_news_signals_count,
                     "signals_remaining": max(0, self.max_signals_per_day - self.daily_signal_count),
                     "last_signal_date": self.last_signal_date.isoformat() if self.last_signal_date else None
                 },
                 "model_performance": {
                     "total_predictions": self.model_performance["total_predictions"],
                     "high_confidence_predictions": self.model_performance["high_confidence_predictions"],
+                    "news_enhanced_predictions": self.model_performance["news_enhanced_predictions"],
+                    "news_accuracy_boost": self.model_performance["news_accuracy_boost"],
+                    "breaking_news_signals": self.model_performance["breaking_news_signals"],
                     "confidence_rate": (
                         self.model_performance["high_confidence_predictions"] / 
                         max(1, self.model_performance["total_predictions"])
                     )
-                }
+                },
+                "news_intelligence": {
+                    "available": self.news_intelligence is not None,
+                    "enhanced_predictions_today": self.news_enhanced_signals_count,
+                    "breaking_news_signals_today": self.breaking_news_signals_count,
+                    "last_news_analysis": self.last_news_analysis
+                },
+                "sentiment_system": "ADVANCED_SENTIMENT_ANALYZER_WITH_NEWS_INTELLIGENCE"
             }
         except Exception as e:
             logger.error(f"Failed to get regime performance summary: {e}")
@@ -1162,7 +1835,8 @@ class ProductionMLSignalGenerator:
                         "signal_id": signal_id,
                         "profitable": outcome.profitable,
                         "pnl": outcome.realized_pnl,
-                        "timestamp": datetime.now()
+                        "timestamp": datetime.now(),
+                        "news_enhanced": "NEWS" in signal_id or "BREAKING_NEWS" in signal_id
                     })
                     
                     # Update accuracy tracking
@@ -1171,7 +1845,13 @@ class ProductionMLSignalGenerator:
                         accuracy = sum(1 for o in recent_outcomes if o["profitable"]) / len(recent_outcomes)
                         self.model_performance["accuracy_tracking"].append(accuracy)
                         
-                        logger.info(f"📊 Regime {regime} accuracy: {accuracy:.1%} (last {len(recent_outcomes)} signals)")
+                        # Track news-enhanced performance
+                        news_enhanced_outcomes = [o for o in recent_outcomes if o["news_enhanced"]]
+                        if len(news_enhanced_outcomes) >= 3:
+                            news_accuracy = sum(1 for o in news_enhanced_outcomes if o["profitable"]) / len(news_enhanced_outcomes)
+                            logger.info(f"📊 Regime {regime} accuracy: {accuracy:.1%} (News Enhanced: {news_accuracy:.1%})")
+                        else:
+                            logger.info(f"📊 Regime {regime} accuracy: {accuracy:.1%} (last {len(recent_outcomes)} signals)")
             
         except Exception as e:
             logger.error(f"Failed to update signal outcome: {e}")
@@ -1190,12 +1870,281 @@ class ProductionMLSignalGenerator:
             return {
                 "status": "healthy",
                 "regime": self.regime_context.get("regime", "UNKNOWN"),
-                "ml_model_loaded": hasattr(self.ml_model, 'model') and self.ml_model.model is not None,
+                "ml_model_loaded": hasattr(self.ml_model, 'is_trained') and getattr(self.ml_model, 'is_trained', False),
                 "daily_signals_generated": self.daily_signal_count,
                 "max_daily_signals": self.max_signals_per_day,
                 "confidence_threshold": self.min_ml_confidence,
                 "total_predictions": self.model_performance["total_predictions"],
+                "news_intelligence_connected": self.news_intelligence is not None,
+                "news_enhanced_signals_today": self.news_enhanced_signals_count,
+                "breaking_news_signals_today": self.breaking_news_signals_count,
+                "sentiment_system": "ADVANCED_SENTIMENT_ANALYZER_WITH_NEWS_INTELLIGENCE",
                 "last_update": datetime.now().isoformat()
             }
         except Exception as e:
+            return {
+                "status": "error", 
+                "error": str(e), 
+                "sentiment_system": "ERROR",
+                "news_intelligence_connected": False
+            }
+    
+    # ================================================================
+    # News Intelligence Performance Analytics
+    # ================================================================
+    
+    def get_news_intelligence_analytics(self) -> Dict:
+        """Get detailed analytics on news intelligence performance"""
+        try:
+            if not self.news_intelligence:
+                return {
+                    "status": "unavailable",
+                    "message": "News intelligence service not connected"
+                }
+            
+            total_signals = self.daily_signal_count
+            news_enhanced = self.news_enhanced_signals_count
+            breaking_news = self.breaking_news_signals_count
+            
+            analytics = {
+                "status": "active",
+                "daily_summary": {
+                    "total_signals_generated": total_signals,
+                    "news_enhanced_signals": news_enhanced,
+                    "breaking_news_signals": breaking_news,
+                    "traditional_signals": total_signals - news_enhanced - breaking_news,
+                    "news_enhancement_rate": (news_enhanced / max(1, total_signals)) * 100,
+                    "breaking_news_rate": (breaking_news / max(1, total_signals)) * 100
+                },
+                "performance_metrics": {
+                    "total_predictions_enhanced": self.model_performance["news_enhanced_predictions"],
+                    "news_accuracy_boost": self.model_performance["news_accuracy_boost"],
+                    "breaking_news_signals_generated": self.model_performance["breaking_news_signals"]
+                },
+                "regime_breakdown": {}
+            }
+            
+            # Add regime-specific news performance
+            for regime, stats in self.model_performance["regime_performance"].items():
+                news_enhanced_count = stats.get("news_enhanced_signals", 0)
+                total_regime_signals = stats.get("signals_generated", 0)
+                
+                analytics["regime_breakdown"][regime] = {
+                    "total_signals": total_regime_signals,
+                    "news_enhanced": news_enhanced_count,
+                    "news_enhancement_rate": (news_enhanced_count / max(1, total_regime_signals)) * 100
+                }
+            
+            return analytics
+            
+        except Exception as e:
+            logger.error(f"Failed to get news intelligence analytics: {e}")
             return {"status": "error", "error": str(e)}
+    
+    def reset_daily_counters(self):
+        """Reset daily counters (called by service manager at day start)"""
+        try:
+            self.daily_signal_count = 0
+            self.news_enhanced_signals_count = 0
+            self.breaking_news_signals_count = 0
+            self.last_signal_date = datetime.now().date()
+            logger.info("🔄 Daily counters reset for new trading day")
+        except Exception as e:
+            logger.error(f"Failed to reset daily counters: {e}")
+    
+    # ================================================================
+    # Enhanced Debugging and Monitoring Methods
+    # ================================================================
+    
+    def get_detailed_status(self) -> Dict:
+        """Get detailed status for debugging and monitoring"""
+        try:
+            current_regime = self.regime_context.get("regime", "UNKNOWN")
+            regime_config = self.regime_configs.get(current_regime, self.regime_configs["SIDEWAYS"])
+            
+            return {
+                "signal_generator_status": {
+                    "version": "v1.2_ML_news_regime_aware",
+                    "initialization_time": datetime.now().isoformat(),
+                    "sentiment_system": "ADVANCED_SENTIMENT_ANALYZER_SINGLE_INSTANCE",
+                    "ml_model_type": "ADVANCED_ENSEMBLE" if self._advanced_models else "BASIC_ENSEMBLE"
+                },
+                "news_intelligence": {
+                    "connected": self.news_intelligence is not None,
+                    "service_type": "EnhancedNewsIntelligenceSystem" if self.news_intelligence else None,
+                    "last_analysis": self.last_news_analysis
+                },
+                "regime_context": {
+                    "current_regime": current_regime,
+                    "confidence": self.regime_context.get("confidence", 0.5),
+                    "strategy": self.regime_context.get("trading_strategy", "MEAN_REVERSION"),
+                    "risk_adjustment": self.regime_context.get("risk_adjustment", 1.0),
+                    "regime_config": regime_config
+                },
+                "trading_parameters": {
+                    "base_confidence_threshold": self.base_min_ml_confidence,
+                    "current_confidence_threshold": self.min_ml_confidence,
+                    "base_max_signals_per_day": self.base_max_signals_per_day,
+                    "current_max_signals_per_day": self.max_signals_per_day,
+                    "max_capital_per_trade": self.max_capital_per_trade
+                },
+                "daily_activity": {
+                    "signals_generated": self.daily_signal_count,
+                    "news_enhanced_signals": self.news_enhanced_signals_count,
+                    "breaking_news_signals": self.breaking_news_signals_count,
+                    "signals_remaining": max(0, self.max_signals_per_day - self.daily_signal_count),
+                    "last_signal_date": self.last_signal_date.isoformat() if self.last_signal_date else None
+                },
+                "performance_tracking": self.model_performance
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get detailed status: {e}")
+            return {"error": str(e), "status": "error"}
+    
+    # ================================================================
+    # Compatibility Methods (for existing integrations)
+    # ================================================================
+    
+    async def generate_ml_signals(self) -> List[SignalRecord]:
+        """Compatibility method - delegates to generate_signals()"""
+        return await self.generate_signals()
+    
+    def get_performance_summary(self) -> Dict:
+        """Compatibility method - delegates to get_regime_performance_summary()"""
+        return self.get_regime_performance_summary()
+    
+    def is_news_intelligence_available(self) -> bool:
+        """Check if news intelligence is available and connected"""
+        return self.news_intelligence is not None
+    
+    def get_news_intelligence_status(self) -> str:
+        """Get news intelligence connection status"""
+        if self.news_intelligence is None:
+            return "DISCONNECTED"
+        else:
+            return "CONNECTED"
+    
+    # ================================================================
+    # Advanced News Intelligence Features
+    # ================================================================
+    
+    async def get_market_news_summary(self) -> Dict:
+        """Get current market news summary using news intelligence"""
+        try:
+            if not self.news_intelligence:
+                return {"status": "unavailable", "message": "News intelligence not connected"}
+            
+            # Get comprehensive market news
+            news_intel = await self.news_intelligence.get_comprehensive_news_intelligence(
+                lookback_hours=4  # Last 4 hours
+            )
+            
+            self.last_news_analysis = datetime.now()
+            
+            return {
+                "status": "success",
+                "market_sentiment": news_intel.get("overall_sentiment", 0.0),
+                "total_articles": news_intel.get("total_articles_analyzed", 0),
+                "high_impact_events": len([e for e in news_intel.get("market_events", []) if e.get("significance_score", 0) > 0.7]),
+                "sector_sentiments": news_intel.get("sentiment_analysis", {}).get("sector_sentiment", {}),
+                "top_events": news_intel.get("market_events", [])[:5],
+                "news_sources": news_intel.get("news_sources_used", []),
+                "analysis_time": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get market news summary: {e}")
+            return {"status": "error", "error": str(e)}
+    
+    async def analyze_symbol_news_impact(self, symbol: str) -> Dict:
+        """Analyze news impact for a specific symbol"""
+        try:
+            if not self.news_intelligence:
+                return {"status": "unavailable", "message": "News intelligence not connected"}
+            
+            # Get symbol-specific news analysis
+            news_sentiment = await self._get_comprehensive_news_sentiment(symbol)
+            
+            return {
+                "status": "success",
+                "symbol": symbol,
+                "analysis": {
+                    "sentiment_score": news_sentiment.get("symbol_specific_sentiment", 0.0),
+                    "news_impact_score": news_sentiment.get("news_impact_score", 0.0),
+                    "articles_analyzed": news_sentiment.get("news_count", 0),
+                    "breaking_news_detected": news_sentiment.get("breaking_news_detected", False),
+                    "high_impact_events": news_sentiment.get("high_impact_events", []),
+                    "latest_headline": news_sentiment.get("latest_headline"),
+                    "enhanced_by_intelligence": news_sentiment.get("enhanced_by_news_intelligence", False)
+                },
+                "trading_implications": {
+                    "sentiment_strength": "STRONG" if abs(news_sentiment.get("symbol_specific_sentiment", 0.0)) > 0.5 else "MODERATE" if abs(news_sentiment.get("symbol_specific_sentiment", 0.0)) > 0.2 else "WEAK",
+                    "impact_level": "HIGH" if news_sentiment.get("news_impact_score", 0.0) > 0.7 else "MEDIUM" if news_sentiment.get("news_impact_score", 0.0) > 0.3 else "LOW",
+                    "trading_bias": "BULLISH" if news_sentiment.get("symbol_specific_sentiment", 0.0) > 0.1 else "BEARISH" if news_sentiment.get("symbol_specific_sentiment", 0.0) < -0.1 else "NEUTRAL"
+                },
+                "analysis_time": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to analyze symbol news impact for {symbol}: {e}")
+            return {"status": "error", "symbol": symbol, "error": str(e)}
+    
+    # ================================================================
+    # System Maintenance and Cleanup
+    # ================================================================
+    
+    def cleanup_performance_tracking(self):
+        """Clean up old performance tracking data to prevent memory bloat"""
+        try:
+            # Keep only last 100 accuracy tracking points
+            if len(self.model_performance["accuracy_tracking"]) > 100:
+                self.model_performance["accuracy_tracking"] = self.model_performance["accuracy_tracking"][-100:]
+            
+            # Clean up regime performance outcomes (keep last 50 per regime)
+            for regime_stats in self.model_performance["regime_performance"].values():
+                if "outcomes" in regime_stats and len(regime_stats["outcomes"]) > 50:
+                    regime_stats["outcomes"] = regime_stats["outcomes"][-50:]
+            
+            logger.info("🧹 Performance tracking data cleaned up")
+            
+        except Exception as e:
+            logger.error(f"Failed to cleanup performance tracking: {e}")
+    
+    def __del__(self):
+        """Cleanup when object is destroyed"""
+        try:
+            logger.info("🔄 ProductionMLSignalGenerator cleanup completed")
+        except:
+            pass  # Ignore errors during cleanup
+    
+    async def generate_ml_signal(self, symbol: str, market_data: Dict[str, Any], 
+                                news_context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """
+        Generate ML-based trading signal with performance monitoring
+        """
+        async with performance_monitor.async_timing("signal_generation", {"symbol": symbol}):
+            try:
+                # Track signal generation attempt
+                performance_monitor.increment_counter("signal_generation_attempts", tags={"symbol": symbol})
+                
+                # Generate signal using existing logic
+                signal = await self._generate_ml_signal_internal(symbol, market_data, news_context)
+                
+                # Track success
+                success = signal is not None
+                performance_monitor.track_success("signal_generation", success, {"symbol": symbol})
+                
+                if success:
+                    performance_monitor.increment_counter("signals_generated", tags={"symbol": symbol})
+                    logger.info(f"✅ ML signal generated for {symbol} with performance monitoring")
+                else:
+                    logger.warning(f"⚠️ Failed to generate ML signal for {symbol}")
+                
+                return signal
+                
+            except Exception as e:
+                # Track failure
+                performance_monitor.track_success("signal_generation", False, {"symbol": symbol})
+                logger.error(f"❌ Signal generation failed for {symbol}: {e}")
+                return None

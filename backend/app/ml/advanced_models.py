@@ -4,29 +4,22 @@ TradeMind AI - Advanced ML Models and Ensemble System
 Multiple state-of-the-art models for maximum trading accuracy
 """
 
-import numpy as np
-import pandas as pd
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Any, Union
-import logging
-import joblib
-import pickle
-from pathlib import Path
 import warnings
+import logging
+import pandas as pd
+from typing import Dict, Any, Tuple, List
+from sklearn.preprocessing import RobustScaler
+import lightgbm as lgb
+from sklearn.metrics import accuracy_score, roc_auc_score
+import numpy as np
+import joblib
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from xgboost import XGBClassifier
+from sklearn.svm import SVC
 warnings.filterwarnings('ignore')
 
 # Advanced ML Libraries
-import xgboost as xgb
-import lightgbm as lgb
-import catboost as cb
-from sklearn.ensemble import RandomForestClassifier, VotingClassifier, StackingClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
-from sklearn.naive_bayes import GaussianNB
-from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
-from sklearn.metrics import accuracy_score, roc_auc_score, precision_recall_curve
 
 # Deep Learning (Optional - install with: pip install torch)
 try:
@@ -36,17 +29,18 @@ try:
     from torch.utils.data import DataLoader, TensorDataset
     TORCH_AVAILABLE = True
 except ImportError:
-    TORCH_AVAILABLE = False
     print("⚠️ PyTorch not available. Install with: pip install torch")
+    TORCH_AVAILABLE = False
 
 # Time Series Models
 try:
-    from statsmodels.tsa.arima.model import ARIMA
-    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    import statsmodels.api as sm
+    from statsmodels.tsa.stattools import adfuller
+    from statsmodels.tsa.seasonal import seasonal_decompose
     STATSMODELS_AVAILABLE = True
 except ImportError:
-    STATSMODELS_AVAILABLE = False
     print("⚠️ Statsmodels not available. Install with: pip install statsmodels")
+    STATSMODELS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +55,6 @@ class LightGBMModel:
         self.scaler = None
         self.feature_columns = None
         
-        # Optimized parameters for financial data
         self.params = {
             'objective': 'binary',
             'metric': 'auc',
@@ -164,7 +157,6 @@ class CatBoostModel:
             # CatBoost handles missing values and doesn't need scaling
             self.model = cb.CatBoostClassifier(**self.params)
             
-            # Train with validation
             self.model.fit(
                 X_train, y_train,
                 eval_set=(X_val, y_val),
@@ -341,7 +333,6 @@ class LSTMModel:
         X_scaled = self.scaler.transform(X[self.feature_columns])
         
         if len(X_scaled) < self.sequence_length:
-            # Pad with last available values if insufficient data
             padding = np.repeat(X_scaled[-1:], self.sequence_length - len(X_scaled), axis=0)
             X_scaled = np.vstack([padding, X_scaled])
         
@@ -375,7 +366,6 @@ class EnsembleModel:
         if TORCH_AVAILABLE:
             self.models['lstm'] = LSTMModel()
         
-        # Classical models for diversity
         self.models['random_forest'] = RandomForestClassifier(
             n_estimators=200, max_depth=10, random_state=42, n_jobs=-1
         )
@@ -399,11 +389,9 @@ class EnsembleModel:
                     logger.info(f"Training {name}...")
                     
                     if name in ['lightgbm', 'catboost', 'lstm']:
-                        # Advanced models with custom training
                         result = model.train(X_train, y_train, X_val, y_val)
                         individual_results[name] = result
                         
-                        # Get predictions for stacking
                         val_pred = model.predict(X_val)
                         model_predictions[name] = val_pred
                         
@@ -521,7 +509,6 @@ class EnsembleModel:
         try:
             predictions = {}
             
-            # Get predictions from each model
             for name, model in self.models.items():
                 try:
                     if name in ['lightgbm', 'catboost', 'lstm']:
@@ -548,7 +535,6 @@ class EnsembleModel:
             weighted_pred = sum(pred * self.model_weights.get(name, 0) 
                               for name, pred in predictions.items())
             
-            # Stacking prediction if available
             stacking_pred = 0.5
             if self.stacking_model and len(predictions) >= 3:
                 try:
@@ -585,7 +571,6 @@ class MarketRegimeClassifier:
         ]
         
         try:
-            from hmmlearn import hmm
             self.HMM_AVAILABLE = True
         except ImportError:
             self.HMM_AVAILABLE = False
@@ -597,7 +582,6 @@ class MarketRegimeClassifier:
             return {"error": "hmmlearn not available"}
         
         try:
-            from hmmlearn import hmm
             
             # Prepare features
             features = self._prepare_regime_features(market_data)
@@ -605,7 +589,6 @@ class MarketRegimeClassifier:
             if len(features) < 100:
                 return {"error": "Insufficient data for regime modeling"}
             
-            # Train HMM with 5 hidden states (regimes)
             self.hmm_model = hmm.GaussianHMM(
                 n_components=5,
                 covariance_type="full",
@@ -615,7 +598,6 @@ class MarketRegimeClassifier:
             
             self.hmm_model.fit(features)
             
-            # Predict regimes for training data
             hidden_states = self.hmm_model.predict(features)
             
             # Analyze regime characteristics
@@ -717,7 +699,6 @@ class MarketRegimeClassifier:
             if len(features) < 20:  # Need minimum data
                 return {"error": "Insufficient recent data"}
             
-            # Predict regime for recent period
             recent_features = features[-20:]  # Last 20 periods
             predicted_states = self.hmm_model.predict(recent_features)
             
@@ -739,7 +720,6 @@ class MarketRegimeClassifier:
             logger.error(f"Regime prediction failed: {e}")
             return {"error": str(e)}
 
-# Model factory for easy instantiation
 class ModelFactory:
     """Factory for creating and managing different model types"""
     
@@ -811,10 +791,8 @@ class ModelComparison:
             if auc >= min_auc and not result.get('error'):
                 good_models.append((model_name, auc))
         
-        # Sort by AUC and return top models
         good_models.sort(key=lambda x: x[1], reverse=True)
         
-        # Return top 5 models or all good models if less than 5
         return [model[0] for model in good_models[:5]]
 
 
