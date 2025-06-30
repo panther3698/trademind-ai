@@ -13,6 +13,8 @@ import logging
 from dataclasses import asdict
 from sklearn.ensemble import RandomForestClassifier
 import time
+import os
+import sqlite3
 
 # FIXED: Add TYPE_CHECKING imports to prevent circular imports
 if TYPE_CHECKING:
@@ -190,6 +192,58 @@ class ProductionMLSignalGenerator:
         self._initialize_ml_model()
         
         logger.info("✅ Production ML Signal Generator initialized with single sentiment system + News Intelligence ready")
+        
+        self._log_data_paths_and_status()
+    
+    def _log_data_paths_and_status(self):
+        # Log historical data DB path
+        try:
+            from app.ml.zerodha_historical_collector import ZerodhaHistoricalDataCollector
+            collector = ZerodhaHistoricalDataCollector()
+            db_path = os.path.abspath(collector.db_path)
+            logger.info(f"[DEBUG] Using historical_data.db at: {db_path}")
+            # Try to open and query for RELIANCE
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*), MIN(date), MAX(date) FROM ohlcv_data WHERE symbol = ?", ("RELIANCE",))
+            result = cursor.fetchone()
+            logger.info(f"[DEBUG] RELIANCE in DB: count={result[0]}, min_date={result[1]}, max_date={result[2]}")
+            conn.close()
+        except Exception as e:
+            logger.error(f"[DEBUG] Failed to access historical_data.db: {e}")
+        # Log ML model path
+        try:
+            from app.ml.models import EnsembleModel
+            model_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../models'))
+            model_path = os.path.join(model_dir, 'enhanced_ensemble_model_v2.0.pkl')
+            logger.info(f"[DEBUG] Using ML model file at: {model_path}")
+            if not os.path.exists(model_path):
+                logger.error(f"[DEBUG] ML model file does not exist: {model_path}")
+            else:
+                logger.info(f"[DEBUG] ML model file found: {model_path}")
+        except Exception as e:
+            logger.error(f"[DEBUG] Failed to resolve ML model path: {e}")
+
+        # Manual test fetch for RELIANCE, TCS, SBIN
+        try:
+            if hasattr(self, 'market_data') and hasattr(self.market_data, 'zerodha'):
+                import asyncio
+                async def test_fetch(symbol):
+                    start_date = (datetime.now() - timedelta(days=30)).date()
+                    end_date = datetime.now().date()
+                    logger.info(f"[DEBUG] [TEST FETCH] Fetching historical data for {symbol} from {start_date} to {end_date} (interval: minute)")
+                    data = await self.market_data.zerodha.get_historical_data(symbol, "minute", start_date, end_date)
+                    logger.info(f"[DEBUG] [TEST FETCH] {symbol}: type={type(data)}, len={len(data) if data is not None and hasattr(data, '__len__') else 'None'}")
+                    if hasattr(data, 'head'):
+                        logger.info(f"[DEBUG] [TEST FETCH] {symbol}: Sample data:\n{data.head()}\n")
+                loop = asyncio.get_event_loop()
+                for symbol in ["RELIANCE", "TCS", "SBIN"]:
+                    try:
+                        loop.run_until_complete(test_fetch(symbol))
+                    except Exception as e:
+                        logger.error(f"[DEBUG] [TEST FETCH] Exception for {symbol}: {e}")
+        except Exception as e:
+            logger.error(f"[DEBUG] [TEST FETCH] Failed to run manual test fetch: {e}")
     
     # ================================================================
     # NEWS INTELLIGENCE INTEGRATION METHODS
@@ -992,14 +1046,22 @@ class ProductionMLSignalGenerator:
             # Get historical data for technical analysis
             try:
                 if hasattr(self.market_data, 'zerodha'):
+                    # Log the symbol and date range being requested
+                    start_date = (datetime.now() - timedelta(days=30)).date()
+                    end_date = datetime.now().date()
+                    logger.info(f"[DEBUG] Fetching historical data for {symbol} from {start_date} to {end_date} (interval: minute)")
                     historical_data = await self.market_data.zerodha.get_historical_data(
-                        symbol, "minute", datetime.now() - timedelta(days=30)
+                        symbol, "minute", start_date, end_date
                     )
+                    logger.info(f"[DEBUG] {symbol}: Retrieved historical data: type={type(historical_data)}, len={len(historical_data) if historical_data is not None and hasattr(historical_data, '__len__') else 'None'}")
+                    if hasattr(historical_data, 'head'):
+                        logger.info(f"[DEBUG] {symbol}: Sample data:\n{historical_data.head()}\n")
                     filter_results.append(("historical_data", "OK", f"{len(historical_data)} bars"))
                 else:
                     historical_data = None
                     filter_results.append(("historical_data", "MISSING", "No zerodha"))
             except Exception as e:
+                logger.error(f"[DEBUG] Exception fetching historical data for {symbol}: {e}")
                 filter_results.append(("historical_data", "ERROR", str(e)))
                 return None, None, f"historical_data_error: {e}"
             # Check historical_data

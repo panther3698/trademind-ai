@@ -10,7 +10,7 @@ import time
 logger = logging.getLogger(__name__)
 
 class SignalService:
-    def __init__(self, *, news_intelligence, signal_generator, analytics_service, signal_logger, telegram_service, regime_detector, backtest_engine, order_engine, webhook_handler, telegram_integration, enhanced_market_service, system_health, current_regime, regime_confidence, premarket_opportunities, priority_signals_queue, interactive_trading_active, signal_generation_active, premarket_analysis_active, priority_trading_active, news_monitoring_active, news_signal_integration=None):
+    def __init__(self, *, news_intelligence, signal_generator, analytics_service, signal_logger, telegram_service, regime_detector, backtest_engine, order_engine, webhook_handler, telegram_integration, enhanced_market_service, system_health, current_regime, regime_confidence, premarket_opportunities, priority_signals_queue, interactive_trading_active, signal_generation_active, premarket_analysis_active, priority_trading_active, news_monitoring_active, news_signal_integration=None, use_fallback_signals=False):
         self.news_intelligence = news_intelligence
         self.signal_generator = signal_generator
         self.analytics_service = analytics_service
@@ -35,6 +35,7 @@ class SignalService:
         self.news_signal_integration = news_signal_integration
         self.signal_generation_task = None
         self._last_signal_time = None
+        self.use_fallback_signals = use_fallback_signals
 
     def convert_signal_record_to_dict(self, signal_record) -> Dict[str, Any]:
         try:
@@ -104,8 +105,8 @@ class SignalService:
                     else:
                         logger.info("📰 No news-triggered signals found")
                 
-                # Fallback signal generation if no signals and market is open
-                if not signals and self._is_market_open():
+                # Fallback signal generation only if explicitly enabled
+                if not signals and self._is_market_open() and self.use_fallback_signals:
                     logger.warning("⚠️ No signals generated, attempting fallback signal generation...")
                     fallback_signals = await self._generate_fallback_signals()
                     if fallback_signals:
