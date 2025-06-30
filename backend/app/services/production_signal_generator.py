@@ -1002,9 +1002,12 @@ class ProductionMLSignalGenerator:
             except Exception as e:
                 filter_results.append(("historical_data", "ERROR", str(e)))
                 return None, None, f"historical_data_error: {e}"
+            # Check historical_data
+            if historical_data is None or not hasattr(historical_data, 'shape') or len(historical_data) < 20:
+                filter_results.append(("historical_data", "FAIL", "Insufficient or missing historical data"))
+                return None, None, "historical_data_insufficient"
             # Feature engineering
             try:
-                # Prepare news_sentiment and nifty_data
                 news_sentiment = {}
                 nifty_data = None
                 features = self.feature_engineer.engineer_features(symbol, historical_data, quote, news_sentiment, nifty_data)
@@ -1012,10 +1015,13 @@ class ProductionMLSignalGenerator:
             except Exception as e:
                 filter_results.append(("feature_engineering", "ERROR", str(e)))
                 return None, None, f"feature_engineering_error: {e}"
+            # Check ML model
+            if self.ml_model is None:
+                filter_results.append(("ml_model", "FAIL", "ML model not loaded"))
+                return None, None, "ml_model_not_loaded"
             # ML inference (collect all model scores if available)
             model_scores = {}
             try:
-                # Main model
                 ml_probability = self.ml_model.predict_signal_probability(features)
                 model_scores['main_model'] = ml_probability
                 filter_results.append(("ml_confidence", ml_probability, f"Threshold: {self.min_ml_confidence}"))
