@@ -1004,7 +1004,10 @@ class ProductionMLSignalGenerator:
                 return None, None, f"historical_data_error: {e}"
             # Feature engineering
             try:
-                features = self.feature_engineer.engineer_features(symbol, quote, historical_data)
+                # Prepare news_sentiment and nifty_data
+                news_sentiment = {}
+                nifty_data = None
+                features = self.feature_engineer.engineer_features(symbol, historical_data, quote, news_sentiment, nifty_data)
                 filter_results.append(("feature_engineering", "OK", "Features created"))
             except Exception as e:
                 filter_results.append(("feature_engineering", "ERROR", str(e)))
