@@ -637,20 +637,20 @@ class EnhancedNewsIntelligenceSystem:
                         
                 elif source_config["type"] == NewsSource.GLOBAL_FINANCIAL:
                     articles = await self._fetch_newsapi_news(source_name, source_config, cutoff_time)
+                    if articles:
+                        self.fetch_stats["newsapi_articles"] += len(articles)
                 
+                # Update fetch time and add articles
                 if articles:
-                    # Cache the articles
-                    self._cache_articles(source_name, lookback_hours, articles)
                     self._update_source_fetch_time(source_name)
-                    
                     all_articles.extend(articles)
-                    self.fetch_stats["successful_fetches"] += 1
-                    self.fetch_stats["articles_fetched"] += len(articles)
-                    logger.info(f"✅ {source_name}: {len(articles)} articles (cached)")
+                    logger.debug(f"✅ Fetched {len(articles)} articles from {source_name}")
+                else:
+                    logger.debug(f"⚠️ No articles fetched from {source_name}")
                     
             except Exception as e:
-                self.fetch_stats["failed_fetches"] += 1
-                logger.debug(f"❌ {source_name} failed: {e}")
+                logger.error(f"❌ Failed to fetch from {source_name}: {e}")
+                continue
         
         # Deduplicate
         unique_articles = self._deduplicate_articles(all_articles)
@@ -1562,17 +1562,33 @@ class EnhancedNewsIntelligenceSystem:
     
     def _should_fetch_source(self, source_name: str) -> bool:
         """Check if source should be fetched based on rate limiting"""
-        if source_name not in self.source_last_fetch:
-            logger.debug(f"⏳ Rate limit: First fetch for {source_name}")
-            return True
-        
-        time_since_last = (datetime.now() - self.source_last_fetch[source_name]).total_seconds()
-        should_fetch = time_since_last >= self.min_fetch_interval
-        
-        if not should_fetch:
-            logger.debug(f"⏳ Rate limit: {source_name} fetched {time_since_last:.1f}s ago, waiting {self.min_fetch_interval - time_since_last:.1f}s more")
-        
-        return should_fetch
+        try:
+            current_time = datetime.now()
+            last_fetch = self.source_last_fetch.get(source_name)
+            
+            if not last_fetch:
+                return True
+            
+            # REDUCED: Less aggressive rate limiting
+            time_since_last = (current_time - last_fetch).total_seconds()
+            
+            # Get source-specific rate limits (more lenient)
+            source_config = self.news_sources.get(source_name, {})
+            rate_limit_seconds = source_config.get("rate_limit_seconds", 60)  # Default 1 minute
+            
+            # Apply global rate limiting only if we've made too many calls recently
+            global_calls_recent = sum(1 for fetch_time in self.source_last_fetch.values() 
+                                    if (current_time - fetch_time).total_seconds() < 300)  # 5 minutes
+            
+            # Allow more frequent fetches if we have few recent calls
+            if global_calls_recent < 10:  # Allow up to 10 calls in 5 minutes
+                rate_limit_seconds = max(30, rate_limit_seconds // 2)  # Reduce rate limit by half
+            
+            return time_since_last >= rate_limit_seconds
+            
+        except Exception as e:
+            logger.debug(f"Rate limiting check failed for {source_name}: {e}")
+            return True  # Allow fetch if check fails
     
     def _update_source_fetch_time(self, source_name: str):
         """Update last fetch time for source"""

@@ -165,12 +165,18 @@ class SignalService:
                 # Try to get opportunities from the signal generator's method
                 if hasattr(self.signal_generator, '_get_top_opportunity_stocks'):
                     opportunities = await self.signal_generator._get_top_opportunity_stocks()
+                elif hasattr(self.signal_generator, 'get_top_opportunity_stocks'):
+                    opportunities = await self.signal_generator.get_top_opportunity_stocks()
                 else:
                     # Fallback to basic market data
                     logger.warning("⚠️ Signal generator method not available, using basic market data")
                     return []
             except Exception as e:
                 logger.error(f"❌ Failed to get opportunities: {e}")
+                return []
+            
+            if not opportunities:
+                logger.warning("⚠️ No opportunities found for fallback signals")
                 return []
             
             fallback_signals = []
@@ -180,14 +186,14 @@ class SignalService:
                     if not symbol:
                         continue
                     
-                    # Create basic signal
+                    # Create basic signal with more lenient criteria
                     signal = {
                         "symbol": symbol,
                         "action": "BUY" if opportunity.get("gap_percentage", 0) > 0 else "SELL",
                         "entry_price": opportunity.get("current_price", 0.0),
                         "target_price": opportunity.get("current_price", 0.0) * 1.02,  # 2% target
                         "stop_loss": opportunity.get("current_price", 0.0) * 0.98,  # 2% stop
-                        "confidence": 0.6,  # Moderate confidence for fallback
+                        "confidence": 0.5,  # Lower confidence for fallback
                         "quantity": 1,
                         "timestamp": datetime.now(),
                         "created_at": datetime.now().isoformat(),
@@ -203,6 +209,7 @@ class SignalService:
                     logger.error(f"Error creating fallback signal: {e}")
                     continue
             
+            logger.info(f"🔄 Generated {len(fallback_signals)} fallback signals")
             return fallback_signals
             
         except Exception as e:

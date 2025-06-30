@@ -119,9 +119,9 @@ class ProductionMLSignalGenerator:
         self.ml_model = None  # Will be loaded by optimized loader
         logger.info("✅ Optimized model loader initialized")
         
-        # Signal generation parameters (base values)
-        self.base_min_ml_confidence = 0.70  # Base 70% ML confidence threshold
-        self.base_max_signals_per_day = 3
+        # Signal generation parameters (base values) - REDUCED THRESHOLDS
+        self.base_min_ml_confidence = 0.55  # Reduced from 0.70 to 0.55 (55% ML confidence threshold)
+        self.base_max_signals_per_day = 5   # Increased from 3 to 5
         self.max_capital_per_trade = 100000  # ₹1 lakh per trade
         
         # Current adjusted parameters (will be updated by regime)
@@ -2226,3 +2226,16 @@ class ProductionMLSignalGenerator:
                 performance_monitor.track_success("signal_generation", False, {"symbol": symbol})
                 logger.error(f"❌ Signal generation failed for {symbol}: {e}")
                 return None
+    
+    async def get_top_opportunity_stocks(self) -> List[Dict]:
+        """
+        Public method to get top opportunity stocks (for fallback signal generation)
+        
+        Returns:
+            List of stock opportunities sorted by potential
+        """
+        try:
+            return await self._get_top_opportunity_stocks()
+        except Exception as e:
+            logger.error(f"❌ get_top_opportunity_stocks failed: {e}")
+            return []
