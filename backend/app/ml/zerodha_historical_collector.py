@@ -824,6 +824,37 @@ class ZerodhaHistoricalDataCollector:
             logger.error(f"❌ Data summary generation failed: {e}")
             return {"error": str(e)}
 
+    async def get_historical_data(self, symbol: str, interval: str, start_date: Optional[date], end_date: Optional[date]):
+        """Fetch historical OHLCV data for a symbol from the DB, with enhanced debug logging."""
+        import pandas as pd
+        import sqlite3
+        db_path = str(self.db_path)
+        logger.info(f"[DEBUG] get_historical_data: symbol={symbol}, interval={interval}, start_date={start_date}, end_date={end_date}, db_path={db_path}")
+        try:
+            conn = sqlite3.connect(db_path)
+            query = '''
+                SELECT date, open_price, high_price, low_price, close_price, volume
+                FROM ohlcv_data
+                WHERE symbol = ? AND date >= ? AND date <= ?
+                ORDER BY date ASC
+            '''
+            df = pd.read_sql_query(query, conn, params=(symbol, str(start_date), str(end_date)))
+            conn.close()
+            logger.info(f"[DEBUG] get_historical_data: {symbol} returned type={type(df)}, len={len(df)}")
+            if not df.empty:
+                logger.info(f"[DEBUG] get_historical_data: {symbol} head=\n{df.head(3)}")
+                return df
+            else:
+                # Log available symbols in DB for diagnosis
+                conn = sqlite3.connect(db_path)
+                symbols_df = pd.read_sql_query('SELECT DISTINCT symbol FROM ohlcv_data', conn)
+                conn.close()
+                logger.warning(f"[DEBUG] get_historical_data: No data for {symbol}. Available symbols in DB: {symbols_df['symbol'].tolist()}")
+                return None
+        except Exception as e:
+            logger.error(f"[DEBUG] get_historical_data: Exception for {symbol}: {e}")
+            return None
+
 
 # ================================================================
 # INTEGRATION WITH EXISTING TRAINING PIPELINE
