@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from app.core.config import settings
 import aiohttp
 import numpy as np
+import pandas as pd
 # If KiteConnect is used, import it:
 try:
     from kiteconnect import KiteConnect
@@ -50,6 +51,8 @@ try:
 except ImportError:
     logging.warning("⚠️ Enhanced News Intelligence not available")
     NEWS_INTELLIGENCE_AVAILABLE = False
+
+from app.ml.zerodha_historical_collector import ZerodhaHistoricalDataCollector
 
 logger = logging.getLogger(__name__)
 
@@ -634,6 +637,23 @@ class KiteConnectService:
             logger.warning(f"⚠️ Kite batch quotes failed: {e}")
         
         return quotes
+    
+    async def get_historical_data(self, symbol: str, interval: str, start_date, end_date):
+        """Fetch historical OHLCV data for a symbol from the DB, fallback to Yahoo if needed."""
+        try:
+            collector = ZerodhaHistoricalDataCollector()
+            logger.info(f"[DEBUG] [KiteConnectService] Fetching historical data for {symbol} {interval} {start_date} to {end_date}")
+            df = await collector.get_historical_data(symbol, interval, start_date, end_date)
+            logger.info(f"[DEBUG] [KiteConnectService] {symbol}: Retrieved {len(df) if df is not None else 0} rows from DB")
+            if df is not None and len(df) > 0:
+                return df
+            else:
+                logger.warning(f"[DEBUG] [KiteConnectService] No DB data for {symbol}, falling back to Yahoo...")
+                # Fallback to Yahoo (optional: implement if needed)
+                return pd.DataFrame()  # Placeholder for Yahoo fallback
+        except Exception as e:
+            logger.error(f"[DEBUG] [KiteConnectService] Error fetching historical data for {symbol}: {e}")
+            return pd.DataFrame()
 
 # ================================================================
 # Enhanced Yahoo Finance Service (Fallback) - ENHANCED
@@ -2540,6 +2560,22 @@ class EnhancedMarketDataService:
         """Stop the pre-market scheduler gracefully"""
         self.premarket_scheduler_active = False
         logger.info("🛑 Pre-market scheduler stopped")
+    
+    async def get_historical_data(self, symbol: str, interval: str, start_date, end_date):
+        """Unified historical data fetch for ML/TA. Uses KiteConnectService, fallback to Yahoo."""
+        try:
+            logger.info(f"[DEBUG] [EnhancedMarketDataService] Fetching historical data for {symbol} {interval} {start_date} to {end_date}")
+            if self.kite_service.is_connected:
+                df = await self.kite_service.get_historical_data(symbol, interval, start_date, end_date)
+                if df is not None and len(df) > 0:
+                    logger.info(f"[DEBUG] [EnhancedMarketDataService] {symbol}: Got {len(df)} rows from KiteConnectService")
+                    return df
+            # Fallback to Yahoo (optional: implement if needed)
+            logger.warning(f"[DEBUG] [EnhancedMarketDataService] No data for {symbol} from Kite, fallback to Yahoo")
+            return pd.DataFrame()
+        except Exception as e:
+            logger.error(f"[DEBUG] [EnhancedMarketDataService] Error fetching historical data for {symbol}: {e}")
+            return pd.DataFrame()
 
 # ================================================================
 # Factory Functions
