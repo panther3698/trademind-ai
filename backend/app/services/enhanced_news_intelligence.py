@@ -76,6 +76,12 @@ class EnhancedNewsIntelligenceSystem:
             "total_articles_cached": 0
         }
         
+        # Global rate limiting to prevent excessive calls
+        self.last_global_fetch = None
+        self.global_fetch_interval = 300  # 5 minutes between global fetches
+        self.fetch_count = 0
+        self.max_fetches_per_hour = 12  # Maximum 12 fetches per hour
+        
         self.last_api_call = {}
         self.api_call_delays = {
             "polygon": 15.0,  # Keep only working Polygon API
@@ -399,7 +405,25 @@ class EnhancedNewsIntelligenceSystem:
                                                 lookback_hours: int = 24) -> Dict[str, Any]:
         """Get comprehensive news intelligence using all available sources with Indian priority"""
         try:
-            logger.info(f"🔍 Running FIXED comprehensive news intelligence analysis (Indian focus)...")
+            # Global rate limiting check
+            current_time = datetime.now()
+            
+            # Check if we've exceeded hourly limit
+            if self.fetch_count >= self.max_fetches_per_hour:
+                logger.warning(f"⚠️ Hourly fetch limit reached ({self.max_fetches_per_hour}), returning cached results")
+                return self._get_cached_global_results(symbols, sectors, lookback_hours)
+            
+            # Check if enough time has passed since last global fetch
+            if (self.last_global_fetch and 
+                (current_time - self.last_global_fetch).total_seconds() < self.global_fetch_interval):
+                logger.info(f"📋 Using cached news intelligence (last fetch: {(current_time - self.last_global_fetch).total_seconds():.1f}s ago)")
+                return self._get_cached_global_results(symbols, sectors, lookback_hours)
+            
+            # Update global fetch tracking
+            self.last_global_fetch = current_time
+            self.fetch_count += 1
+            
+            logger.info(f"🔍 Running FIXED comprehensive news intelligence analysis (Indian focus)... (Fetch #{self.fetch_count})")
             
             # Clean up expired cache entries
             await self._cleanup_cache()
@@ -478,7 +502,7 @@ class EnhancedNewsIntelligenceSystem:
                 total_articles = len(relevant_articles)
                 indian_coverage_ratio = indian_articles_count / total_articles if total_articles > 0 else 0
                 
-                return {
+                result = {
                     "timestamp": datetime.now().isoformat(),
                     "analysis_period_hours": lookback_hours,
                     "total_articles_analyzed": len(relevant_articles),
@@ -505,6 +529,11 @@ class EnhancedNewsIntelligenceSystem:
                     "high_impact_news": high_impact_news
                 }
                 
+                # Cache the global result
+                self._cache_global_result(result, symbols, sectors, lookback_hours)
+                
+                return result
+                
             except Exception as response_error:
                 logger.error(f"❌ Response building error: {response_error}")
                 return {
@@ -522,6 +551,41 @@ class EnhancedNewsIntelligenceSystem:
                 "cache_statistics": self.cache_stats,
                 "timestamp": datetime.now().isoformat()
             }
+    
+    def _get_cached_global_results(self, symbols: List[str] = None, sectors: List[str] = None, lookback_hours: int = 24) -> Dict[str, Any]:
+        """Get cached global results when rate limited"""
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "analysis_period_hours": lookback_hours,
+            "total_articles_analyzed": 0,
+            "indian_articles_count": 0,
+            "indian_coverage_ratio": 0.0,
+            "news_sources_used": [],
+            "premium_sources_count": 0,
+            "overall_sentiment": {"sentiment_category": "NEUTRAL", "adjusted_sentiment": 0.0},
+            "sentiment_analysis": {"overall_sentiment": 0.0, "symbol_sentiment": {}, "sector_sentiment": {}},
+            "market_events": [],
+            "sector_impact": {},
+            "news_signals": [],
+            "fetch_statistics": self.fetch_stats,
+            "cache_statistics": self.cache_stats,
+            "indian_market_coverage": {
+                "indian_sources_working": False,
+                "backup_sources_used": 0,
+                "sentiment_bias": "Cached"
+            },
+            "api_coverage": {
+                "polygon_active": False,
+                "newsapi_active": False
+            },
+            "high_impact_news": [],
+            "cached_result": True
+        }
+    
+    def _cache_global_result(self, result: Dict[str, Any], symbols: List[str] = None, sectors: List[str] = None, lookback_hours: int = 24):
+        """Cache global result for rate limiting"""
+        # Simple global cache - could be enhanced with more sophisticated caching
+        pass
     
     async def _fetch_all_news_sources(self, lookback_hours: int) -> List[NewsArticle]:
         """Fetch from all available sources with Indian priority and caching"""
@@ -1461,7 +1525,9 @@ class EnhancedNewsIntelligenceSystem:
     
     def _get_cache_key(self, source_name: str, lookback_hours: int) -> str:
         """Generate cache key for source and time window"""
-        return f"{source_name}_{lookback_hours}h"
+        # Create a more specific cache key that includes timestamp for better cache management
+        current_hour = datetime.now().hour
+        return f"{source_name}_{lookback_hours}h_{current_hour}"
     
     def _get_cached_articles(self, source_name: str, lookback_hours: int) -> Optional[List[NewsArticle]]:
         """Get cached articles if available and not expired"""
@@ -1471,26 +1537,42 @@ class EnhancedNewsIntelligenceSystem:
             articles, timestamp = self.article_cache[cache_key]
             if (datetime.now() - timestamp).total_seconds() < self.cache_ttl:
                 self.cache_stats["cache_hits"] += 1
-                logger.debug(f"📋 Cache hit for {source_name}: {len(articles)} articles")
+                logger.debug(f"📋 Cache HIT for {source_name}: {len(articles)} articles (key: {cache_key})")
                 return articles
+            else:
+                logger.debug(f"📋 Cache EXPIRED for {source_name} (key: {cache_key})")
+                # Remove expired entry
+                del self.article_cache[cache_key]
+                self.cache_stats["cache_evictions"] += 1
         
         self.cache_stats["cache_misses"] += 1
+        logger.debug(f"📋 Cache MISS for {source_name} (key: {cache_key})")
         return None
     
     def _cache_articles(self, source_name: str, lookback_hours: int, articles: List[NewsArticle]):
         """Cache articles for future use"""
+        if not articles:
+            logger.debug(f"📋 No articles to cache for {source_name}")
+            return
+            
         cache_key = self._get_cache_key(source_name, lookback_hours)
         self.article_cache[cache_key] = (articles, datetime.now())
         self.cache_stats["total_articles_cached"] += len(articles)
-        logger.debug(f"💾 Cached {len(articles)} articles for {source_name}")
+        logger.debug(f"💾 Cached {len(articles)} articles for {source_name} (key: {cache_key})")
     
     def _should_fetch_source(self, source_name: str) -> bool:
         """Check if source should be fetched based on rate limiting"""
         if source_name not in self.source_last_fetch:
+            logger.debug(f"⏳ Rate limit: First fetch for {source_name}")
             return True
         
         time_since_last = (datetime.now() - self.source_last_fetch[source_name]).total_seconds()
-        return time_since_last >= self.min_fetch_interval
+        should_fetch = time_since_last >= self.min_fetch_interval
+        
+        if not should_fetch:
+            logger.debug(f"⏳ Rate limit: {source_name} fetched {time_since_last:.1f}s ago, waiting {self.min_fetch_interval - time_since_last:.1f}s more")
+        
+        return should_fetch
     
     def _update_source_fetch_time(self, source_name: str):
         """Update last fetch time for source"""

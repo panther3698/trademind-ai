@@ -7,7 +7,7 @@
 import asyncio
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 import logging
 from dataclasses import asdict
@@ -800,14 +800,22 @@ class ProductionMLSignalGenerator:
     
     async def _get_top_opportunity_stocks(self) -> List[Dict]:
         """
-        Get top opportunity stocks from Nifty 100 using regime-aware pre-market analysis
+        Get top opportunity stocks from Nifty 100 using market-appropriate analysis
         
         Returns:
             List of stock opportunities sorted by ML potential with regime considerations
         """
         try:
             current_regime = self.regime_context.get("regime", "SIDEWAYS")
-            logger.info(f"📋 Running regime-aware pre-market analysis on Nifty 100 (Regime: {current_regime})...")
+            current_time = datetime.now().time()
+            
+            # Check if we're in pre-market hours (8:00 AM to 9:15 AM)
+            is_premarket = dt_time(8, 0) <= current_time <= dt_time(9, 15)
+            
+            if is_premarket:
+                logger.info(f"📋 Running regime-aware pre-market analysis on Nifty 100 (Regime: {current_regime})...")
+            else:
+                logger.info(f"📊 Running live market opportunity analysis on Nifty 100 (Regime: {current_regime})...")
             
             # Get all Nifty 100 stocks
             all_stocks = self.stock_universe.get_all_stocks()
@@ -828,16 +836,29 @@ class ProductionMLSignalGenerator:
                     gap_pct = ((quote["ltp"] - quote["prev_close"]) / quote["prev_close"]) * 100
                     volume_ratio = quote.get("volume", 1) / 1000000  # Normalize volume
                     
-                    # Get news sentiment (enhanced if available)
+                    # Get news sentiment (enhanced if available) - but only during pre-market or if news is fresh
+                    sentiment_score = 0.0
+                    news_impact = 0.0
+                    
                     if self.news_intelligence:
-                        try:
-                            # Quick news sentiment check
-                            news_sentiment_data = await self._get_comprehensive_news_sentiment(symbol)
-                            sentiment_score = news_sentiment_data.get("symbol_specific_sentiment", 0.0)
-                            news_impact = news_sentiment_data.get("news_impact_score", 0.0)
-                        except:
-                            sentiment_score = 0.0
-                            news_impact = 0.0
+                        # Only fetch news during pre-market or if we haven't fetched recently
+                        if is_premarket or not hasattr(self, '_last_news_fetch') or \
+                           (datetime.now() - getattr(self, '_last_news_fetch', datetime.min)).total_seconds() > 300:  # 5 minutes
+                            try:
+                                # Quick news sentiment check
+                                news_sentiment_data = await self._get_comprehensive_news_sentiment(symbol)
+                                sentiment_score = news_sentiment_data.get("symbol_specific_sentiment", 0.0)
+                                news_impact = news_sentiment_data.get("news_impact_score", 0.0)
+                                self._last_news_fetch = datetime.now()
+                            except Exception as e:
+                                logger.debug(f"News sentiment fetch failed for {symbol}: {e}")
+                                sentiment_score = 0.0
+                                news_impact = 0.0
+                        else:
+                            # Use cached sentiment data during live market
+                            sentiment_data = market_data.get("sentiment", {})
+                            sentiment_score = sentiment_data.get("sentiment_score", 0.0)
+                            news_impact = sentiment_data.get("news_impact_score", 0.0)
                     else:
                         sentiment_data = market_data.get("sentiment", {})
                         sentiment_score = sentiment_data.get("sentiment_score", 0.0)
@@ -859,15 +880,16 @@ class ProductionMLSignalGenerator:
                         "sector": self.stock_universe.get_sector(symbol),
                         "market_data": market_data,
                         "regime_score": opportunity_score,
-                        "news_enhanced": news_impact > 0.1  # NEWS: Flag news enhancement
+                        "news_enhanced": news_impact > 0.1,  # NEWS: Flag news enhancement
+                        "analysis_type": "premarket" if is_premarket else "live_market"
                     })
                     
                     processed += 1
                     if processed % 20 == 0:
                         logger.info(f"Analyzed {processed}/{len(all_stocks)} stocks...")
                     
-                    # Rate limiting
-                    await asyncio.sleep(0.05)  # 50ms delay
+                    # Rate limiting - faster during live market
+                    await asyncio.sleep(0.02 if not is_premarket else 0.05)  # 20ms live, 50ms pre-market
                     
                 except Exception as e:
                     logger.debug(f"Opportunity analysis failed for {symbol}: {e}")
@@ -877,7 +899,8 @@ class ProductionMLSignalGenerator:
             opportunities.sort(key=lambda x: x["regime_score"], reverse=True)
             
             news_enhanced = len([o for o in opportunities[:10] if o.get("news_enhanced", False)])
-            logger.info(f"✅ Analyzed {len(opportunities)} stocks, top 10 regime-aware opportunities (News Enhanced: {news_enhanced}):")
+            analysis_type = "pre-market" if is_premarket else "live market"
+            logger.info(f"✅ Analyzed {len(opportunities)} stocks using {analysis_type} analysis, top 10 regime-aware opportunities (News Enhanced: {news_enhanced}):")
             for i, opp in enumerate(opportunities[:10]):
                 news_indicator = "📰" if opp.get("news_enhanced", False) else ""
                 logger.info(f"  {i+1}. {opp['symbol']} {news_indicator} - Score: {opp['regime_score']:.2f} "
