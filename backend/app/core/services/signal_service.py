@@ -160,11 +160,21 @@ class SignalService:
                 logger.warning("⚠️ Market service not available for fallback signals")
                 return []
             
-            # Get top Nifty stocks with basic analysis
-            opportunities = await self.enhanced_market_service.get_top_opportunity_stocks(limit=10)
+            # Get top Nifty stocks with basic analysis - use the correct method
+            try:
+                # Try to get opportunities from the signal generator's method
+                if hasattr(self.signal_generator, '_get_top_opportunity_stocks'):
+                    opportunities = await self.signal_generator._get_top_opportunity_stocks()
+                else:
+                    # Fallback to basic market data
+                    logger.warning("⚠️ Signal generator method not available, using basic market data")
+                    return []
+            except Exception as e:
+                logger.error(f"❌ Failed to get opportunities: {e}")
+                return []
             
             fallback_signals = []
-            for opportunity in opportunities:
+            for opportunity in opportunities[:10]:  # Limit to top 10
                 try:
                     symbol = opportunity.get("symbol")
                     if not symbol:
@@ -173,7 +183,7 @@ class SignalService:
                     # Create basic signal
                     signal = {
                         "symbol": symbol,
-                        "action": "BUY" if opportunity.get("gap_pct", 0) > 0 else "SELL",
+                        "action": "BUY" if opportunity.get("gap_percentage", 0) > 0 else "SELL",
                         "entry_price": opportunity.get("current_price", 0.0),
                         "target_price": opportunity.get("current_price", 0.0) * 1.02,  # 2% target
                         "stop_loss": opportunity.get("current_price", 0.0) * 0.98,  # 2% stop
