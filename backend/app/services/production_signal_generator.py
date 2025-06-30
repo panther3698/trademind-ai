@@ -541,12 +541,10 @@ class ProductionMLSignalGenerator:
         """
         start_time = time.time()
         logger.info(f"🚀 Starting signal generation process...")
-        
-        # --- BEGIN ADDITION ---
         total_analyzed = 0
         confidence_rejected = 0
         confidence_rejected_symbols = []
-        # --- END ADDITION ---
+        rejection_reasons = []
         try:
             # Reset daily counter if new day
             today = datetime.now().date()
@@ -601,62 +599,58 @@ class ProductionMLSignalGenerator:
                     if self.daily_signal_count >= self.max_signals_per_day:
                         logger.info(f"Daily signal limit reached during processing")
                         break
-                        
                     symbol = stock_data["symbol"]
                     logger.debug(f"Analyzing {symbol} ({i+1}/{len(opportunities)})")
-                    total_analyzed += 1  # Track total
-                    # Add timeout for individual stock analysis
-                    signal = await asyncio.wait_for(
+                    total_analyzed += 1
+                    # --- CHANGED: get signal, ml_conf, reason ---
+                    signal, ml_conf, reject_reason = await asyncio.wait_for(
                         self._analyze_stock_with_simplified_ml_and_news(symbol, stock_data),
                         timeout=15.0
                     )
+                    stock_data['ml_confidence'] = ml_conf
                     if signal:
-                        # Validate signal with regime-aware risk management
                         risk_check = self.signal_logger.check_risk_limits(signal)
                         if risk_check["overall_risk_ok"]:
-                            # Add regime metadata to signal
                             signal = self._enhance_signal_with_regime_data(signal)
                             signals.append(signal)
                             self.daily_signal_count += 1
-                            # Track if enhanced by news
                             if hasattr(signal, 'notes') and signal.notes and 'News Enhanced' in signal.notes:
                                 self.news_enhanced_signals_count += 1
-                            # Log the signal with regime info
                             success = self.signal_logger.log_signal(signal)
                             if success:
                                 news_indicator = "📰" if self.news_intelligence else ""
                                 logger.info(f"🎯 ML Signal ({current_regime}): {signal.ticker} {signal.direction.value} {news_indicator} "
                                           f"ML Confidence: {signal.ml_confidence:.1%} | "
                                           f"Entry: ₹{signal.entry_price} | Risk Adj: {self.regime_context.get('risk_adjustment', 1.0):.1f}x")
-                            # Track regime-specific performance
                             self._track_regime_signal(signal, current_regime)
                         else:
-                            logger.debug(f"Signal rejected for {symbol}: Risk limits exceeded")
+                            logger.info(f"❌ {symbol} rejected: Risk limits exceeded (ML confidence: {ml_conf if ml_conf is not None else 'N/A'})")
+                            rejection_reasons.append((symbol, ml_conf, 'risk_limit'))
                     else:
-                        # --- BEGIN ADDITION ---
-                        # Check if rejected due to ML confidence threshold
-                        ml_conf = stock_data.get('ml_confidence')
-                        min_conf = self.min_ml_confidence
-                        if ml_conf is not None and ml_conf < min_conf:
+                        # Always log the reason and confidence
+                        logger.info(f"❌ {symbol} rejected: {reject_reason} (ML confidence: {ml_conf if ml_conf is not None else 'N/A'})")
+                        rejection_reasons.append((symbol, ml_conf, reject_reason))
+                        if reject_reason == 'below_confidence_threshold':
                             confidence_rejected += 1
                             confidence_rejected_symbols.append((symbol, ml_conf))
-                            logger.info(f"❌ {symbol} rejected: ML confidence {ml_conf:.2f} below threshold {min_conf:.2f}")
-                        else:
-                            logger.debug(f"No signal generated for {symbol}")
-                        # --- END ADDITION ---
                 except asyncio.TimeoutError:
                     logger.warning(f"⚠️ Signal generation timed out for {symbol}")
+                    rejection_reasons.append((symbol, None, 'timeout'))
                     continue
                 except Exception as e:
                     logger.error(f"Signal generation failed for {symbol}: {e}")
+                    rejection_reasons.append((symbol, None, f'exception: {e}'))
                     continue
-            # --- BEGIN ADDITION ---
             if total_analyzed > 0:
                 percent_rejected = (confidence_rejected / total_analyzed) * 100
                 logger.info(f"📊 {confidence_rejected}/{total_analyzed} stocks ({percent_rejected:.1f}%) rejected due to ML confidence threshold ({self.min_ml_confidence:.2f})")
                 if confidence_rejected_symbols:
                     logger.info(f"Symbols rejected (confidence): {[f'{s}({c:.2f})' for s,c in confidence_rejected_symbols]}")
-            # --- END ADDITION ---
+                # Log all rejection reasons summary
+                reason_counts = {}
+                for _, _, reason in rejection_reasons:
+                    reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                logger.info(f"📊 Rejection reasons: {reason_counts}")
             # Log completion with detailed metrics
             end_time = time.time()
             processing_time = end_time - start_time
@@ -988,24 +982,16 @@ class ProductionMLSignalGenerator:
             logger.error(f"Regime-aware scoring with news failed: {e}")
             return abs(gap_pct) * 0.4 + min(volume_ratio, 3.0) * 0.3 + abs(sentiment_score) * 0.3
     
-    async def _analyze_stock_with_simplified_ml_and_news(self, symbol: str, stock_data: Dict) -> Optional[SignalRecord]:
+    async def _analyze_stock_with_simplified_ml_and_news(self, symbol: str, stock_data: Dict) -> tuple:
         """
         Analyze individual stock using simplified ML pipeline with optional news enhancement
-        
-        Args:
-            symbol: Stock symbol
-            stock_data: Pre-computed stock data from opportunity analysis
-            
-        Returns:
-            SignalRecord if ML confidence is high enough, with optional news enhancement
+        Returns: (SignalRecord or None, ml_confidence or None, rejection_reason or None)
         """
         try:
             current_regime = self.regime_context.get("regime", "SIDEWAYS")
             logger.debug(f"🤖 Simplified ML + News analysis for {symbol} (Regime: {current_regime})...")
-            
             market_data = stock_data["market_data"]
             quote = market_data["quote"]
-            
             # Get historical data for technical analysis
             try:
                 if hasattr(self.market_data, 'zerodha'):
@@ -1013,90 +999,53 @@ class ProductionMLSignalGenerator:
                         symbol, "minute", datetime.now() - timedelta(days=30)
                     )
                 else:
-                    # Fallback to mock historical data
-                    historical_data = []
+                    historical_data = None
             except Exception as e:
-                logger.debug(f"Historical data unavailable for {symbol}: {e}")
-                historical_data = []
+                return None, None, f"historical_data_error: {e}"
+            # Feature engineering
+            try:
+                features = self.feature_engineer.create_features(symbol, quote, historical_data)
+            except Exception as e:
+                return None, None, f"feature_engineering_error: {e}"
+            # ML inference
+            try:
+                ml_probability = self.ml_model.predict_signal_probability(features)
+            except Exception as e:
+                return None, None, f"ml_inference_error: {e}"
+            # Always attach confidence
+            stock_data['ml_confidence'] = ml_probability
+            # Confidence threshold check
+            if ml_probability < self.min_ml_confidence:
+                return None, ml_probability, 'below_confidence_threshold'
+            # Post-processing and signal creation
+            try:
+                signal = self._postprocess_signal(features, ml_probability, symbol, quote)
+                if not signal:
+                    return None, ml_probability, 'postprocess_failed'
+            except Exception as e:
+                return None, ml_probability, f'postprocess_error: {e}'
+            return signal, ml_probability, None
+        except Exception as e:
+            return None, None, f'exception: {e}'
+    
+    def _postprocess_signal(self, features: Dict, ml_probability: float, symbol: str, quote: Dict) -> Optional[SignalRecord]:
+        """Post-process the signal based on ML output and regime context"""
+        try:
+            current_regime = self.regime_context.get("regime", "SIDEWAYS")
+            logger.debug(f"🤖 Post-processing signal for {symbol} (Regime: {current_regime})...")
             
-            if len(historical_data) < 50:
-                logger.debug(f"Insufficient historical data for {symbol}")
-                # Use fallback analysis
-                return await self._fallback_signal_analysis(symbol, stock_data)
-            
-            # Convert to DataFrame
-            df = pd.DataFrame([{
-                'timestamp': h.timestamp if hasattr(h, 'timestamp') else datetime.now(),
-                'open': h.open if hasattr(h, 'open') else quote["ltp"],
-                'high': h.high if hasattr(h, 'high') else quote["ltp"],
-                'low': h.low if hasattr(h, 'low') else quote["ltp"],
-                'close': h.close if hasattr(h, 'close') else quote["ltp"],
-                'volume': h.volume if hasattr(h, 'volume') else quote.get("volume", 0)
-            } for h in historical_data])
-            
-            # Engineer features
-            current_quote = {
-                'ltp': quote["ltp"],
-                'prev_close': quote["prev_close"],
-                'volume': quote.get("volume", 0),
-                'change_percent': stock_data["gap_percentage"]
-            }
-            
-            # SIMPLIFIED: Use simplified news sentiment analysis
-            news_sentiment = await self._get_simplified_news_sentiment(symbol)
-            
-            # Track news enhancement
-            if news_sentiment.get("enhanced_by_news_intelligence", False):
-                self.model_performance["news_enhanced_predictions"] += 1
-            
-            # Get Nifty data for correlation
-            nifty_data = await self._get_nifty_correlation_data()
-            
-            # Engineer comprehensive features with regime context
-            features = self.feature_engineer.engineer_features(
-                symbol, df, current_quote, news_sentiment, nifty_data
-            )
-            
-            if not features:
-                logger.debug(f"Feature engineering failed for {symbol}")
-                return await self._fallback_signal_analysis(symbol, stock_data)
-            
-            # Add regime-specific features
-            features = self._add_regime_features(features, current_regime)
-            
-            # SIMPLIFIED: Add basic news features
-            features = self._add_simplified_news_features(features, news_sentiment, current_regime)
-            
-            # ML prediction with regime considerations
-            ml_probability, prediction_details = self.ml_model.predict_signal_probability(features)
-            
-            # SIMPLIFIED: Apply basic news-enhanced confidence adjustment
-            adjusted_probability = self._apply_simplified_news_confidence_adjustment(
-                ml_probability, news_sentiment, current_regime
-            )
-            
-            # Track prediction
-            self.model_performance["total_predictions"] += 1
-            if adjusted_probability > self.min_ml_confidence:
-                self.model_performance["high_confidence_predictions"] += 1
-            
-            # Check ML confidence threshold
-            if adjusted_probability < self.min_ml_confidence:
-                logger.debug(f"{symbol} ML confidence {adjusted_probability:.1%} below threshold {self.min_ml_confidence:.1%}")
-                return None
-            
-            # Determine signal direction based on features and ML output
-            direction = self._determine_signal_direction_with_simplified_news(features, adjusted_probability, news_sentiment, current_regime)
+            # Determine signal direction based on ML output
+            direction = SignalDirection.BUY if ml_probability > 0.5 else SignalDirection.SELL
             
             # Calculate price levels using regime-enhanced logic
             entry_price = quote["ltp"]
             stop_loss, target_price = self._calculate_regime_aware_price_levels(
-                entry_price, features, direction, adjusted_probability, current_regime
+                entry_price, features, direction, ml_probability, current_regime
             )
             
             # Calculate position sizing based on ML confidence and regime
             position_size = self._calculate_regime_aware_position_size(
-                entry_price, stop_loss, adjusted_probability, features, current_regime
+                entry_price, stop_loss, ml_probability, features, current_regime
             )
             
             # Create comprehensive signal record with regime awareness + optional news enhancement
@@ -1108,28 +1057,28 @@ class ProductionMLSignalGenerator:
                 entry_price=entry_price,
                 stop_loss=stop_loss,
                 target_price=target_price,
-                ml_confidence=adjusted_probability,  # Use news-enhanced confidence
+                ml_confidence=ml_probability,  # Use news-enhanced confidence
                 technical_score=features.get("technical_composite_score", 0.0),
-                sentiment_score=news_sentiment.get("symbol_specific_sentiment", news_sentiment.get("finbert_score", 0.0)),
+                sentiment_score=features.get("sentiment_score", 0.0),
                 macro_score=features.get("nifty_performance", 0.0),
-                final_score=adjusted_probability,  # News-enhanced ML probability is our final score
+                final_score=ml_probability,  # News-enhanced ML probability is our final score
                 indicators=self._create_technical_indicators_from_features(features),
                 market_context=await self._create_enhanced_market_context(features),
-                pre_market=self._create_pre_market_data_from_features(features, news_sentiment),
+                pre_market=self._create_pre_market_data_from_features(features, features),
                 risk_reward_ratio=self._calculate_risk_reward_ratio(entry_price, stop_loss, target_price, direction),
                 position_size_suggested=position_size,
                 capital_at_risk=abs(entry_price - stop_loss) * position_size,
                 model_version="v1.2_simplified_ml_news_regime_aware",
                 signal_source=f"SIMPLIFIED_ML_{current_regime}",
-                notes=self._create_simplified_signal_notes(symbol, current_regime, ml_probability, adjusted_probability, news_sentiment, prediction_details)
+                notes=self._create_simplified_signal_notes(symbol, current_regime, ml_probability, ml_probability, features, features)
             )
             
-            logger.debug(f"✅ {symbol} Simplified ML Signal: {direction.value} Confidence: {adjusted_probability:.1%}")
+            logger.debug(f"✅ {symbol} Simplified ML Signal: {direction.value} Confidence: {ml_probability:.1%}")
             return signal
             
         except Exception as e:
-            logger.error(f"Simplified ML analysis failed for {symbol}: {e}")
-            return await self._fallback_signal_analysis(symbol, stock_data)
+            logger.error(f"Failed to post-process signal for {symbol}: {e}")
+            return None
     
     def _add_simplified_news_features(self, features: Dict, news_sentiment: Dict, regime: str) -> Dict:
         """Add basic news-specific features to the feature set"""
