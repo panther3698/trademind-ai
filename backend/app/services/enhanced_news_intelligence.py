@@ -636,7 +636,7 @@ class EnhancedNewsIntelligenceSystem:
                         self.fetch_stats["premium_articles"] += len(articles)
                         
                 elif source_config["type"] == NewsSource.GLOBAL_FINANCIAL:
-                    articles = await self._fetch_newsapi_news(source_name, source_config, cutoff_time)
+                    articles = await self._fetch_polygon_news(source_name, source_config, cutoff_time)
                     if articles:
                         self.fetch_stats["newsapi_articles"] += len(articles)
                 
@@ -938,6 +938,87 @@ class EnhancedNewsIntelligenceSystem:
                                 
         except Exception as e:
             logger.debug(f"Polygon error: {e}")
+        
+        return articles
+    
+    async def _fetch_newsapi_news(self, source_name: str, config: Dict, cutoff_time: datetime) -> List[NewsArticle]:
+        """Fetch from NewsAPI"""
+        articles = []
+        
+        try:
+            api_key = self.config.get("news_api_key")
+            if not api_key:
+                return articles
+            
+            await self._rate_limit_check("newsapi")
+            self.fetch_stats["api_calls_made"] += 1
+            
+            # Build query based on source configuration
+            query = config.get("query", "business")
+            if config.get("country") == "IN":
+                query += " AND (India OR Indian OR Nifty OR Sensex)"
+            
+            params = {
+                "q": query,
+                "apiKey": api_key,
+                "language": "en",
+                "sortBy": "publishedAt",
+                "pageSize": 50,
+                "from": cutoff_time.strftime("%Y-%m-%d")
+            }
+            
+            # Add domain if specified
+            if config.get("domain"):
+                params["domains"] = config["domain"]
+            
+            async with self.session.get("https://newsapi.org/v2/everything", params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    if "articles" in data:
+                        for item in data["articles"]:
+                            try:
+                                # Parse published date
+                                pub_date_str = item.get("publishedAt", "")
+                                if pub_date_str:
+                                    pub_date = datetime.fromisoformat(pub_date_str.replace("Z", "+00:00"))
+                                else:
+                                    pub_date = datetime.now()
+                                
+                                if pub_date < cutoff_time:
+                                    continue
+                                
+                                # Create article
+                                article = NewsArticle(
+                                    id=hashlib.md5(item["url"].encode()).hexdigest(),
+                                    title=item["title"] or "",
+                                    content=item.get("description", "") or "",
+                                    source=item.get("source", {}).get("name", "NewsAPI"),
+                                    author=item.get("author"),
+                                    published_at=pub_date,
+                                    url=item["url"],
+                                    category="business",
+                                    relevance_score=0.7,
+                                    sentiment_score=0.0,
+                                    symbols_mentioned=[],
+                                    sectors_affected=[],
+                                    market_impact="MEDIUM",
+                                    language="en",
+                                    country=config.get("country", "GLOBAL"),
+                                    news_type=NewsSource.GLOBAL_FINANCIAL
+                                )
+                                articles.append(article)
+                                
+                            except Exception as e:
+                                continue
+                                
+                elif response.status == 429:
+                    logger.warning("⚠️ NewsAPI rate limit exceeded")
+                else:
+                    logger.debug(f"NewsAPI returned status {response.status}")
+                    
+        except Exception as e:
+            logger.debug(f"NewsAPI error: {e}")
         
         return articles
     
