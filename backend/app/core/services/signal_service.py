@@ -5,6 +5,7 @@ import logging
 import traceback
 from app.core.config import settings
 from utils.profiling import profile_timing
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -78,25 +79,124 @@ class SignalService:
 
     async def generate_signals(self) -> List[Union[Dict, Any]]:
         signals = []
+        start_time = time.time()
+        logger.info("🚀 Starting signal generation process...")
+        
         try:
             if self.signal_generator:
+                logger.info("📊 Calling regime-aware signal generator...")
                 signals = await self.signal_generator.generate_regime_aware_signals(
                     self.current_regime, self.regime_confidence
                 )
+                
+                if signals:
+                    logger.info(f"✅ Generated {len(signals)} ML signals")
+                else:
+                    logger.info("📊 No ML signals generated - all stocks filtered by confidence thresholds")
+                
+                # Add news-triggered signals if available
                 if self.news_signal_integration:
+                    logger.info("📰 Checking for news-triggered signals...")
                     news_signals = await self.get_news_triggered_signals()
                     if news_signals:
                         signals.extend(news_signals)
                         logger.info(f"📰 Added {len(news_signals)} news-triggered signals")
-                if not signals:
-                    logger.info(f"✅ No ML signals generated - all stocks filtered out by confidence thresholds (this is good risk management)")
+                    else:
+                        logger.info("📰 No news-triggered signals found")
+                
+                # Fallback signal generation if no signals and market is open
+                if not signals and self._is_market_open():
+                    logger.warning("⚠️ No signals generated, attempting fallback signal generation...")
+                    fallback_signals = await self._generate_fallback_signals()
+                    if fallback_signals:
+                        signals.extend(fallback_signals)
+                        logger.info(f"🔄 Generated {len(fallback_signals)} fallback signals")
+                
+                # Log final results
+                end_time = time.time()
+                processing_time = end_time - start_time
+                
+                if signals:
+                    logger.info(f"🎯 Signal generation completed in {processing_time:.2f}s: {len(signals)} total signals")
+                    # Log each signal for monitoring
+                    for i, signal in enumerate(signals):
+                        if hasattr(signal, 'ticker'):
+                            logger.info(f"📋 Signal {i+1}: {signal.ticker} | Confidence: {getattr(signal, 'ml_confidence', 0.0):.1%}")
+                        elif isinstance(signal, dict):
+                            logger.info(f"📋 Signal {i+1}: {signal.get('symbol', 'UNKNOWN')} | Confidence: {signal.get('confidence', 0.0):.1%}")
                 else:
-                    logger.info(f"🎯 Generated {len(signals)} high-confidence signals (ML + News)")
+                    logger.info(f"📊 Signal generation completed in {processing_time:.2f}s: No signals generated")
+                
             else:
                 logger.warning("⚠️ Signal generator not available - no signals generated")
+                
             return signals
+            
         except Exception as e:
-            logger.error(f"❌ Signal generation failed: {e}")
+            end_time = time.time()
+            processing_time = end_time - start_time
+            logger.error(f"❌ Signal generation failed after {processing_time:.2f}s: {e}")
+            return []
+    
+    def _is_market_open(self) -> bool:
+        """Check if market is currently open"""
+        try:
+            current_time = datetime.now().time()
+            market_open = dt_time(9, 15)  # 9:15 AM
+            market_close = dt_time(15, 30)  # 3:30 PM
+            
+            return market_open <= current_time <= market_close
+        except Exception as e:
+            logger.error(f"Error checking market status: {e}")
+            return False
+    
+    async def _generate_fallback_signals(self) -> List[Union[Dict, Any]]:
+        """Generate fallback signals without news intelligence"""
+        try:
+            logger.info("🔄 Generating fallback signals using basic technical analysis...")
+            
+            # Get basic market data
+            if not self.enhanced_market_service:
+                logger.warning("⚠️ Market service not available for fallback signals")
+                return []
+            
+            # Get top Nifty stocks with basic analysis
+            opportunities = await self.enhanced_market_service.get_top_opportunity_stocks(limit=10)
+            
+            fallback_signals = []
+            for opportunity in opportunities:
+                try:
+                    symbol = opportunity.get("symbol")
+                    if not symbol:
+                        continue
+                    
+                    # Create basic signal
+                    signal = {
+                        "symbol": symbol,
+                        "action": "BUY" if opportunity.get("gap_pct", 0) > 0 else "SELL",
+                        "entry_price": opportunity.get("current_price", 0.0),
+                        "target_price": opportunity.get("current_price", 0.0) * 1.02,  # 2% target
+                        "stop_loss": opportunity.get("current_price", 0.0) * 0.98,  # 2% stop
+                        "confidence": 0.6,  # Moderate confidence for fallback
+                        "quantity": 1,
+                        "timestamp": datetime.now(),
+                        "created_at": datetime.now().isoformat(),
+                        "status": "active",
+                        "signal_source": "FALLBACK_TECHNICAL",
+                        "notes": "Fallback signal generated without news intelligence"
+                    }
+                    
+                    fallback_signals.append(signal)
+                    logger.info(f"🔄 Fallback signal: {symbol} {signal['action']} @ ₹{signal['entry_price']}")
+                    
+                except Exception as e:
+                    logger.error(f"Error creating fallback signal: {e}")
+                    continue
+            
+            return fallback_signals
+            
+        except Exception as e:
+            logger.error(f"❌ Fallback signal generation failed: {e}")
             return []
 
     async def get_news_triggered_signals(self) -> List[Dict]:

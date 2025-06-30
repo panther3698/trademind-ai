@@ -10,7 +10,7 @@ import os
 import logging
 import asyncio
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
 from dataclasses import dataclass, asdict
@@ -52,6 +52,17 @@ except ImportError:
     NEWS_INTELLIGENCE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+# Dedicated logger for stock selection debug
+stock_selection_debug_logger = logging.getLogger('stock_selection_debug')
+if not stock_selection_debug_logger.handlers:
+    fh = logging.FileHandler('logs/stock_selection_debug.log', mode='w', encoding='utf-8')
+    formatter = logging.Formatter('%(asctime)s - %(message)s')
+    fh.setFormatter(formatter)
+    stock_selection_debug_logger.addHandler(fh)
+    stock_selection_debug_logger.setLevel(logging.DEBUG)
+    # TEST: Confirm logger setup
+    stock_selection_debug_logger.debug("TEST: Stock selection debug logger initialized.")
 
 # ================================================================
 # ================================================================
@@ -949,54 +960,59 @@ class PreMarketAnalysisEngine:
             logger.error(f"Failed to set news intelligence in pre-market engine: {e}")
     
     async def run_comprehensive_analysis(self) -> List[PreMarketOpportunity]:
-        """Run comprehensive pre-market analysis with dual data sources and news intelligence"""
         logger.info("🌅 Running comprehensive pre-market analysis for Nifty 100 with News Intelligence...")
-        
         start_time = time.time()
         opportunities = []
-        
-        # Get all Nifty 100 symbols
         all_symbols = self.nifty100.get_all_symbols()
-        
-        # Try primary service (Kite Connect) first
+        logger.debug(f"All symbols for analysis: {all_symbols}")
         quotes = {}
         if hasattr(self.primary_service, 'is_connected') and self.primary_service.is_connected:
+            logger.info("Fetching bulk quotes from primary service (Kite Connect)...")
             quotes = await self.primary_service.get_bulk_quotes(all_symbols)
             logger.info(f"📊 Kite Connect: Got {len(quotes)} real-time quotes")
-        
         if len(quotes) < len(all_symbols):
             missing_symbols = [s for s in all_symbols if s not in quotes]
+            logger.info(f"Fetching missing quotes from fallback service (Yahoo Finance): {missing_symbols}")
             fallback_quotes = await self.fallback_service.get_bulk_quotes(missing_symbols)
             quotes.update(fallback_quotes)
             logger.info(f"📊 Yahoo fallback: Got {len(fallback_quotes)} additional quotes")
-        
-        # ENHANCED: Get comprehensive market news intelligence
+        logger.info(f"Total quotes fetched: {len(quotes)}. Symbols: {list(quotes.keys())}")
+        if not quotes:
+            logger.warning("No quotes fetched from any data source. Analysis will not proceed.")
+            return []
+        logger.info(f"Entering analysis loop with {len(quotes)} quotes.")
+        logger.info("Fetching comprehensive market news context...")
         market_news_context = await self._get_market_news_context()
-        
+        logger.debug(f"Market news context: {market_news_context}")
+        logger.info(f"Total news articles analyzed: {market_news_context.get('total_articles', 'N/A')}, sources: {market_news_context.get('news_sources', 'N/A')}")
         for symbol, quote in quotes.items():
+            stock_selection_debug_logger.debug(f"FORCE LOG: Entered analysis loop for {symbol}")
+            logger.info(f"Analyzing symbol: {symbol}")
             try:
+                logger.debug(f"Analyzing {symbol}: raw quote={quote}")
                 opportunity = await self._analyze_stock_opportunity_with_news(symbol, quote, market_news_context)
-                if opportunity and opportunity.priority_score > 0.5:  # Minimum threshold
+                if opportunity and opportunity.priority_score > 0.5:
+                    logger.info(f"Opportunity found: {symbol} | Priority Score: {opportunity.priority_score:.2f}")
                     opportunities.append(opportunity)
+                else:
+                    logger.debug(f"No opportunity for {symbol} (below threshold or rejected)")
             except Exception as e:
-                logger.debug(f"Failed to analyze {symbol}: {e}")
-        
-        # Sort by priority score (news-enhanced)
+                logger.error(f"Failed to analyze {symbol}: {e}")
         opportunities.sort(key=lambda x: x.priority_score, reverse=True)
-        
         processing_time = time.time() - start_time
         news_enhanced_count = len([o for o in opportunities if o.enhanced_by_news_intelligence])
         breaking_news_count = len([o for o in opportunities if o.breaking_news_detected])
-        
         logger.info(f"🎯 Pre-market analysis complete: {len(opportunities)} opportunities found in {processing_time:.1f}s")
         logger.info(f"📰 News Enhanced: {news_enhanced_count}, Breaking News: {breaking_news_count}")
-        
-        return opportunities[:15]  # Top 15 opportunities (increased from 10)
+        if not opportunities:
+            logger.warning("No pre-market opportunities found. Check data, thresholds, and news integration.")
+        return opportunities[:15]
     
     async def _get_market_news_context(self) -> Dict:
         """Get comprehensive market news context for pre-market analysis"""
         try:
             if not self.news_intelligence:
+                logger.warning("News intelligence service is not set. Returning empty news context.")
                 return {
                     "overall_sentiment": 0.0,
                     "sector_sentiments": {},
@@ -1004,27 +1020,22 @@ class PreMarketAnalysisEngine:
                     "breaking_news_symbols": [],
                     "high_impact_events": []
                 }
-            
-            # Get comprehensive market news
+            logger.info("Calling news intelligence for comprehensive news analysis...")
             news_analysis = await self.news_intelligence.get_comprehensive_news_intelligence(
                 lookback_hours=12  # Overnight news
             )
-            
-            # Extract market context
+            logger.debug(f"News intelligence raw output: {news_analysis}")
             sentiment_analysis = news_analysis.get("sentiment_analysis", {})
             market_events = news_analysis.get("market_events", [])
-            
-            # Identify breaking news symbols
             breaking_news_symbols = []
             high_impact_events = []
-            
             for event in market_events:
                 significance = event.get("significance_score", 0.0)
                 if significance > 0.8:
                     high_impact_events.append(event)
                     symbols_mentioned = event.get("symbols_mentioned", [])
                     breaking_news_symbols.extend(symbols_mentioned)
-            
+            logger.info(f"News context: {len(market_events)} market events, {len(breaking_news_symbols)} breaking news symbols, {len(high_impact_events)} high impact events.")
             return {
                 "overall_sentiment": news_analysis.get("overall_sentiment", 0.0),
                 "sector_sentiments": sentiment_analysis.get("sector_sentiment", {}),
@@ -1035,7 +1046,6 @@ class PreMarketAnalysisEngine:
                 "total_articles": news_analysis.get("total_articles_analyzed", 0),
                 "news_sources": news_analysis.get("news_sources_used", [])
             }
-            
         except Exception as e:
             logger.error(f"Failed to get market news context: {e}")
             return {
@@ -1049,47 +1059,83 @@ class PreMarketAnalysisEngine:
     
     async def _analyze_stock_opportunity_with_news(self, symbol: str, quote: MarketTick, 
                                                   market_news_context: Dict) -> Optional[PreMarketOpportunity]:
-        """Analyze individual stock for opportunity with comprehensive news intelligence"""
         try:
             symbol_info = self.nifty100.get_symbol_info(symbol)
-            
-            # Calculate basic opportunity score components
+            logger.debug(f"Scoring {symbol}: gap={quote.change_percent}, vol={quote.volume_ratio}, sector={symbol_info.get('sector')}")
             gap_score = self._calculate_gap_score(quote.change_percent)
             volume_score = self._calculate_volume_score(quote.volume_ratio)
             technical_score = self._calculate_technical_score(quote)
-            
-            # ENHANCED: Calculate news-enhanced sentiment and scores
+            sentiment = market_news_context.get('sentiment', 0)
+            sector_sentiment = market_news_context.get('sector_sentiment', 0)
+            news_impact = market_news_context.get('news_impact', 0)
+            breaking_news = market_news_context.get('breaking_news', False)
+            news_count = len(market_news_context.get('news', []))
+            top_headline = market_news_context.get('news', [{}])[0].get('headline', '') if news_count > 0 else ''
+
+            # Step-by-step filter logging
+            if abs(quote.change_percent) < 1:
+                stock_selection_debug_logger.debug(f"{symbol} REJECTED: Gap {quote.change_percent:.2f}% below threshold (|gap| < 1%)")
+                return None
+            if volume_score < 0.5:
+                stock_selection_debug_logger.debug(f"{symbol} REJECTED: Volume score {volume_score:.2f} below threshold (< 0.5)")
+                return None
+            if technical_score < 0.3:
+                stock_selection_debug_logger.debug(f"{symbol} REJECTED: Technical score {technical_score:.2f} below threshold (< 0.3)")
+                return None
+            if sentiment < -0.5:
+                stock_selection_debug_logger.debug(f"{symbol} REJECTED: Sentiment {sentiment:.2f} too negative (< -0.5)")
+                return None
+            if news_impact < 0.1:
+                stock_selection_debug_logger.debug(f"{symbol} REJECTED: News impact {news_impact:.2f} below threshold (< 0.1)")
+                return None
+
+            priority_score = self._calculate_priority_score(
+                gap_score, volume_score, technical_score, sentiment, sector_sentiment, news_impact, breaking_news
+            )
+            action = self._determine_action(priority_score, gap_score, sentiment)
+            stock_selection_debug_logger.debug(
+                f"{symbol} | gap={quote.change_percent:.2f} | vol={quote.volume_ratio:.2f} | tech={technical_score:.2f} | "
+                f"sentiment={sentiment:.2f} | sector={sector_sentiment:.2f} | news_impact={news_impact:.2f} | "
+                f"priority={priority_score:.2f} | action={action} | news_count={news_count} | "
+                f"headline={top_headline} | REASON: {'SELECTED' if action != 'WATCH' else 'REJECTED'}"
+            )
+            if action == 'WATCH':
+                logger.debug(f"{symbol} rejected: action=WATCH, priority_score={priority_score:.2f}")
+                stock_selection_debug_logger.debug(f"{symbol} REJECTED: Final action=WATCH, priority_score={priority_score:.2f}")
+                return None
+            logger.debug(f"{symbol} selected: action={action}, priority_score={priority_score:.2f}")
+            stock_selection_debug_logger.debug(f"{symbol} SELECTED: All criteria passed. Priority score: {priority_score:.2f}")
             news_enhanced_sentiment = await self._get_news_enhanced_sentiment(symbol, quote, market_news_context)
             sentiment_score = news_enhanced_sentiment["final_sentiment"]
             sector_score = self._get_news_enhanced_sector_momentum(symbol_info.get("sector", "Unknown"), market_news_context)
-            
-            # NEWS INTELLIGENCE: Additional scoring components
             news_impact_score = news_enhanced_sentiment["news_impact_score"]
             breaking_news_boost = 0.2 if news_enhanced_sentiment["breaking_news_detected"] else 0.0
             market_sentiment_alignment = self._calculate_market_sentiment_alignment(
                 sentiment_score, market_news_context.get("overall_sentiment", 0.0)
             )
-            
             priority_score = (
                 gap_score * 0.20 +
                 volume_score * 0.15 +
                 sentiment_score * 0.15 +
                 sector_score * 0.10 +
                 technical_score * 0.15 +
-                news_impact_score * 0.15 +  # NEWS: Direct news impact
-                market_sentiment_alignment * 0.10 +  # NEWS: Market alignment
-                breaking_news_boost  # NEWS: Breaking news boost
+                news_impact_score * 0.15 +
+                market_sentiment_alignment * 0.10 +
+                breaking_news_boost
             )
-            
             entry_strategy = self._determine_news_enhanced_entry_strategy(quote, news_enhanced_sentiment)
-            
             target_price, stop_loss = self._calculate_news_enhanced_targets(quote, entry_strategy, news_enhanced_sentiment)
-            
             recommendation = self._get_news_enhanced_recommendation(
                 priority_score, gap_score, volume_score, news_impact_score, 
                 news_enhanced_sentiment["breaking_news_detected"]
             )
-            
+            logger.debug(
+                f"{symbol}: gap={gap_score:.2f}, vol={volume_score:.2f}, tech={technical_score:.2f}, "
+                f"sentiment={sentiment_score:.2f}, sector={sector_score:.2f}, news_impact={news_impact_score:.2f}, "
+                f"market_align={market_sentiment_alignment:.2f}, breaking={breaking_news_boost:.2f}, "
+                f"priority={priority_score:.2f}, action={recommendation}, news_count={news_enhanced_sentiment['news_count']}, "
+                f"headline={news_enhanced_sentiment['latest_headline']}"
+            )
             return PreMarketOpportunity(
                 symbol=symbol,
                 priority_score=round(priority_score, 3),
@@ -1112,7 +1158,6 @@ class PreMarketAnalysisEngine:
                 news_sources_count=news_enhanced_sentiment["sources_count"],
                 enhanced_by_news_intelligence=self.news_enhanced_analysis
             )
-            
         except Exception as e:
             logger.debug(f"Failed to analyze opportunity for {symbol}: {e}")
             return None
@@ -1470,6 +1515,10 @@ class EnhancedMarketDataService:
         
         self.is_initialized = False
         
+        # Add scheduler activation and startup
+        self.premarket_scheduler_active = False
+        asyncio.create_task(self._start_premarket_scheduler())
+        
     async def initialize(self):
         """Initialize enhanced market data service with complete news integration"""
         try:
@@ -1504,6 +1553,8 @@ class EnhancedMarketDataService:
             logger.info(f"🏪 Market Status: {self.market_status.value}")
             logger.info(f"🎯 Trading Mode: {self.trading_mode.value}")
             logger.info(f"📰 News Intelligence: Ready for connection")
+            
+            logger.info("🎯 Pre-market analysis system initialized - Ready to scan for market open opportunities")
             
         except Exception as e:
             logger.error(f"❌ Enhanced Market Data Service initialization failed: {e}")
@@ -1829,9 +1880,22 @@ class EnhancedMarketDataService:
     async def run_premarket_analysis(self) -> Dict[str, Any]:
         """Run comprehensive pre-market analysis with complete news intelligence integration"""
         try:
-            logger.info("🌅 Starting comprehensive pre-market analysis for Nifty 100 with complete news intelligence...")
+            logger.info("🔍 Starting comprehensive pre-market analysis...")
+            start_time = datetime.now()
             
             opportunities = await self.premarket_engine.run_comprehensive_analysis()
+            
+            logger.info(f"📊 Analysis completed in {(datetime.now() - start_time).total_seconds():.1f}s")
+            logger.info(f"🔍 Discovered {len(opportunities)} total pre-market opportunities")
+            if opportunities:
+                logger.info("🎯 TOP 5 OPPORTUNITIES DISCOVERED:")
+                for i, opp in enumerate(opportunities[:5], 1):
+                    gap_pct = getattr(opp, 'gap_percentage', 0)
+                    news_count = getattr(opp, 'overnight_news_count', 0)
+                    volume_exp = getattr(opp, 'volume_expectation', 0)
+                    logger.info(f"  {i}. {opp.symbol} | Gap: {gap_pct:.2f}% | News: {news_count} | Vol: {volume_exp:.2f}x | Action: {opp.recommended_action}")
+            strong_signals = [opp for opp in opportunities if getattr(opp, 'confidence_score', 0) > 0.8]
+            logger.info(f"✅ {len(strong_signals)} high-confidence signals prepared for market open execution")
             
             self.priority_opportunities = opportunities
             self.premarket_analysis_time = datetime.now()
@@ -2351,6 +2415,131 @@ class EnhancedMarketDataService:
             logger.info("📊 Enhanced Market Data Service with News Intelligence closed gracefully")
         except Exception as e:
             logger.error(f"Error closing Enhanced Market Data Service: {e}")
+    
+    def set_service_manager(self, service_manager):
+        """Set reference to service manager for order execution"""
+        self.service_manager = service_manager
+        logger.info("🔗 Service manager reference set for pre-market order execution")
+    
+    def calculate_premarket_quantity(self, signal, available_funds=None):
+        """Calculate appropriate quantity for pre-market signal execution"""
+        try:
+            if available_funds is None:
+                available_funds = 50000  # Default allocation for pre-market trades
+            price = getattr(signal, 'current_price', signal.target_price)
+            max_quantity = int(available_funds / price) if price > 0 else 100
+            return min(max_quantity, 500)  # Max 500 shares for pre-market
+        except Exception as e:
+            logger.error(f"Error calculating quantity for {signal.symbol}: {e}")
+            return 100  # Default fallback
+    
+    async def _start_premarket_scheduler(self):
+        """Background scheduler for pre-market analysis and market open execution."""
+        self.premarket_scheduler_active = True
+        logger.info("⏰ Starting pre-market analysis scheduler (8:00-9:15 AM, every 15 min)...")
+        
+        while self.premarket_scheduler_active:
+            try:
+                now = datetime.now()
+                current_time = now.time()
+                weekday = now.weekday()
+                
+                # Skip weekends
+                if weekday >= 5:
+                    await asyncio.sleep(60)
+                    continue
+                
+                pre_market_start = dt_time(8, 0)
+                pre_market_end = dt_time(9, 10)
+                market_open = dt_time(9, 15)
+                
+                # Run pre-market analysis every 15 min between 8:00 and 9:10
+                if pre_market_start <= current_time <= pre_market_end:
+                    logger.info(f"⏳ Pre-market window: {current_time.strftime('%H:%M')}. Running pre-market analysis...")
+                    result = await self.run_premarket_analysis()
+                    
+                    logger.info(f"📝 Pre-market analysis result: {result.get('total_opportunities', 0)} opportunities, {result.get('strong_buy_count', 0)} strong buys.")
+                    logger.info(f"🟢 Signal preparation status: {len(self.priority_opportunities)} signals ready for market open.")
+                    
+                    # Log top opportunities
+                    if hasattr(self, 'priority_opportunities') and self.priority_opportunities:
+                        logger.info("🎯 TOP OPPORTUNITIES FOR MARKET OPEN:")
+                        for i, opp in enumerate(self.priority_opportunities[:3], 1):
+                            logger.info(f"  {i}. {opp.symbol} | Action: {opp.recommended_action} | Gap: {getattr(opp, 'gap_percentage', 'N/A')}% | Target: {opp.target_price}")
+                    
+                    # Sleep until next 15-min interval
+                    next_run = (15 - (now.minute % 15)) * 60 - now.second
+                    await asyncio.sleep(max(60, next_run))
+                
+                # At 9:15, execute signals
+                elif market_open <= current_time < (datetime.combine(now.date(), market_open) + timedelta(minutes=1)).time():
+                    if hasattr(self, 'priority_opportunities') and self.priority_opportunities:
+                        logger.info(f"🚀 MARKET OPEN! Executing {len(self.priority_opportunities)} pre-calculated signals.")
+                        
+                        # Execute each prepared signal through the order engine
+                        for signal in self.priority_opportunities:
+                            try:
+                                logger.info(f"🔥 EXECUTING: {signal.symbol} | Action: {signal.recommended_action} | Target: {signal.target_price} | SL: {signal.stop_loss}")
+                                
+                                # Get the notification service (which has order engine access)
+                                if hasattr(self, 'service_manager') and self.service_manager:
+                                    notification_service = self.service_manager.notification_service
+                                    if notification_service and notification_service.order_engine:
+                                        # Calculate quantity
+                                        quantity = self.calculate_premarket_quantity(signal)
+                                        # Convert signal to order format
+                                        order_details = {
+                                            'symbol': signal.symbol,
+                                            'action': signal.recommended_action,  # BUY/SELL
+                                            'quantity': quantity,
+                                            'price': signal.target_price,
+                                            'stop_loss': signal.stop_loss,
+                                            'signal_confidence': getattr(signal, 'confidence_score', 0.8),
+                                            'signal_type': 'PRE_MARKET_EXECUTION',
+                                            'auto_approved': True  # Skip Telegram approval for pre-market execution
+                                        }
+                                        # Place the order directly
+                                        order_result = await notification_service.order_engine.place_order(**order_details)
+                                        if order_result and order_result.get('status') == 'SUCCESS':
+                                            logger.info(f"✅ ORDER EXECUTED: {signal.symbol} | Order ID: {order_result.get('order_id')}")
+                                            # Send Telegram notification about successful execution
+                                            if notification_service.telegram_service:
+                                                message = f"🚀 PRE-MARKET EXECUTION SUCCESS!\n"
+                                                message += f"Symbol: {signal.symbol}\n"
+                                                message += f"Action: {signal.recommended_action}\n"
+                                                message += f"Order ID: {order_result.get('order_id')}\n"
+                                                message += f"Executed at Market Open: 9:15 AM"
+                                                await notification_service.telegram_service.send_message(message)
+                                        else:
+                                            logger.error(f"❌ ORDER FAILED: {signal.symbol} | Error: {order_result}")
+                                            # Send failure notification
+                                            if notification_service.telegram_service:
+                                                await notification_service.telegram_service.send_message(
+                                                    f"❌ PRE-MARKET EXECUTION FAILED: {signal.symbol}\nReason: {order_result.get('error', 'Unknown error')}"
+                                                )
+                                    else:
+                                        logger.error("❌ Order engine not available for pre-market execution")
+                                else:
+                                    logger.error("❌ Service manager not available for pre-market execution")
+                            except Exception as e:
+                                logger.error(f"❌ Error executing pre-market signal for {signal.symbol}: {e}")
+                        # Clear queue after execution attempts
+                        logger.info("✅ All pre-market signals processed. Clearing queue.")
+                        self.priority_opportunities = []
+                    else:
+                        logger.info("ℹ️ Market open - No pre-calculated signals to execute.")
+                    await asyncio.sleep(60)
+                else:
+                    # Outside pre-market hours, sleep 1 min and check again
+                    await asyncio.sleep(60)
+            except Exception as e:
+                logger.error(f"❌ Pre-market scheduler error: {e}")
+                await asyncio.sleep(60)
+    
+    async def stop_premarket_scheduler(self):
+        """Stop the pre-market scheduler gracefully"""
+        self.premarket_scheduler_active = False
+        logger.info("🛑 Pre-market scheduler stopped")
 
 # ================================================================
 # Factory Functions

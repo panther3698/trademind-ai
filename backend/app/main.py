@@ -73,7 +73,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('logs/trademind_enhanced.log', encoding='utf-8')
+        # Always recreate the log file on startup to avoid lock/corruption issues
+        logging.FileHandler('logs/trademind_enhanced.log', mode='w', encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)

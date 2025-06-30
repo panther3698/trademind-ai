@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 import logging
 from dataclasses import asdict
 from sklearn.ensemble import RandomForestClassifier
+import time
 
 # FIXED: Add TYPE_CHECKING imports to prevent circular imports
 if TYPE_CHECKING:
@@ -538,6 +539,9 @@ class ProductionMLSignalGenerator:
         Returns:
             List of high-confidence ML-generated signals with optional news enhancement
         """
+        start_time = time.time()
+        logger.info(f"🚀 Starting signal generation process...")
+        
         try:
             # Reset daily counter if new day
             today = datetime.now().date()
@@ -554,29 +558,53 @@ class ProductionMLSignalGenerator:
                 logger.info(f"Daily signal limit reached ({self.max_signals_per_day}) for regime {self.regime_context.get('regime')}")
                 return []
             
-            # Check market status
-            await self.market_data.update_market_status()
-            if hasattr(self.market_data, 'market_status') and self.market_data.market_status.value != "OPEN":
-                logger.info(f"Market closed: {self.market_data.market_status.value}")
+            # Check market status with timeout
+            logger.info("📊 Checking market status...")
+            try:
+                await asyncio.wait_for(self.market_data.update_market_status(), timeout=10.0)
+                if hasattr(self.market_data, 'market_status') and self.market_data.market_status.value != "OPEN":
+                    logger.info(f"Market closed: {self.market_data.market_status.value}")
+                    return []
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ Market status check timed out, proceeding with analysis")
+            except Exception as e:
+                logger.error(f"❌ Market status check failed: {e}")
                 return []
             
-            # Get top opportunity stocks
-            opportunities = await self._get_top_opportunity_stocks()
-            if not opportunities:
-                logger.info("No trading opportunities found")
+            # Get top opportunity stocks with timeout
+            logger.info("🔍 Fetching trading opportunities...")
+            try:
+                opportunities = await asyncio.wait_for(self._get_top_opportunity_stocks(), timeout=30.0)
+                if not opportunities:
+                    logger.info("No trading opportunities found")
+                    return []
+                logger.info(f"📈 Found {len(opportunities)} trading opportunities")
+            except asyncio.TimeoutError:
+                logger.error("❌ Opportunity analysis timed out after 30 seconds")
+                return []
+            except Exception as e:
+                logger.error(f"❌ Opportunity analysis failed: {e}")
                 return []
             
             # Generate signals for top opportunities
             signals = []
             current_regime = self.regime_context.get("regime", "SIDEWAYS")
+            logger.info(f"🎯 Generating signals for {len(opportunities)} opportunities (Regime: {current_regime})")
             
-            for stock_data in opportunities:
+            for i, stock_data in enumerate(opportunities):
                 try:
                     if self.daily_signal_count >= self.max_signals_per_day:
+                        logger.info(f"Daily signal limit reached during processing")
                         break
                         
                     symbol = stock_data["symbol"]
-                    signal = await self._analyze_stock_with_simplified_ml_and_news(symbol, stock_data)
+                    logger.debug(f"Analyzing {symbol} ({i+1}/{len(opportunities)})")
+                    
+                    # Add timeout for individual stock analysis
+                    signal = await asyncio.wait_for(
+                        self._analyze_stock_with_simplified_ml_and_news(symbol, stock_data),
+                        timeout=15.0
+                    )
                     
                     if signal:
                         # Validate signal with regime-aware risk management
@@ -603,16 +631,43 @@ class ProductionMLSignalGenerator:
                             
                             # Track regime-specific performance
                             self._track_regime_signal(signal, current_regime)
-                            
+                        else:
+                            logger.debug(f"Signal rejected for {symbol}: Risk limits exceeded")
+                    else:
+                        logger.debug(f"No signal generated for {symbol}")
+                        
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Signal generation timed out for {symbol}")
+                    continue
                 except Exception as e:
                     logger.error(f"Signal generation failed for {symbol}: {e}")
                     continue
             
-            logger.info(f"✅ Generated {len(signals)} signals (Regime: {current_regime}, News Enhanced: {self.news_enhanced_signals_count})")
+            # Log completion with detailed metrics
+            end_time = time.time()
+            processing_time = end_time - start_time
+            
+            logger.info(f"✅ Signal generation completed in {processing_time:.2f}s")
+            logger.info(f"📊 Results: {len(signals)} signals generated (Regime: {current_regime}, News Enhanced: {self.news_enhanced_signals_count})")
+            logger.info(f"📈 Daily progress: {self.daily_signal_count}/{self.max_signals_per_day} signals")
+            
+            # Log performance metrics
+            if signals:
+                avg_confidence = sum(s.ml_confidence for s in signals) / len(signals)
+                logger.info(f"📊 Average confidence: {avg_confidence:.1%}")
+                
+                # Log signal details for monitoring
+                for signal in signals:
+                    logger.info(f"📋 Signal: {signal.ticker} | Direction: {signal.direction.value} | "
+                              f"Entry: ₹{signal.entry_price} | Target: ₹{signal.target_price} | "
+                              f"Stop: ₹{signal.stop_loss} | Confidence: {signal.ml_confidence:.1%}")
+            
             return signals
             
         except Exception as e:
-            logger.error(f"❌ Signal generation failed: {e}")
+            end_time = time.time()
+            processing_time = end_time - start_time
+            logger.error(f"❌ Signal generation failed after {processing_time:.2f}s: {e}")
             return []
     
     async def generate_regime_aware_signals(self, regime=None, regime_confidence=None) -> List[SignalRecord]:

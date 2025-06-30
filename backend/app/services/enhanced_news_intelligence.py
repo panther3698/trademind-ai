@@ -58,11 +58,23 @@ class EnhancedNewsIntelligenceSystem:
     FIXED: Complete News Intelligence System with Working RSS Sources Only
     REMOVED: Failing APIs (Alpha Vantage, EODHD, Finnhub)
     ADDED: 8 Working RSS Feeds for Reliable News Collection
+    ENHANCED: Comprehensive caching system to prevent duplicate API calls
     """
     
     def __init__(self, config: Dict):
         self.config = config
         self.session = None
+        
+        # Caching system to prevent duplicate API calls
+        self.article_cache = {}  # Cache articles by source and timestamp
+        self.cache_ttl = 300  # 5 minutes cache TTL
+        self.last_cache_cleanup = datetime.now()
+        self.cache_stats = {
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "cache_evictions": 0,
+            "total_articles_cached": 0
+        }
         
         self.last_api_call = {}
         self.api_call_delays = {
@@ -70,6 +82,10 @@ class EnhancedNewsIntelligenceSystem:
             "rss": 0.5,  # Reduced for better performance
             "indian_rss": 1.5  # Special category for Indian sources
         }
+        
+        # Rate limiting with cache awareness
+        self.source_last_fetch = {}  # Track last fetch time per source
+        self.min_fetch_interval = 60  # Minimum 60 seconds between fetches for same source
         
         # FIXED: Working RSS Sources Only - Based on Latest Research Results
         self.news_sources = {
@@ -385,6 +401,9 @@ class EnhancedNewsIntelligenceSystem:
         try:
             logger.info(f"🔍 Running FIXED comprehensive news intelligence analysis (Indian focus)...")
             
+            # Clean up expired cache entries
+            await self._cleanup_cache()
+            
             # Reset stats
             self.fetch_stats = {k: 0 for k in self.fetch_stats.keys()}
             
@@ -396,40 +415,26 @@ class EnhancedNewsIntelligenceSystem:
             # Filter None articles
             all_articles = [article for article in all_articles if article is not None]
             
-            try:
-                relevant_articles = await self._filter_relevant_news(all_articles, symbols, sectors)
-                if not relevant_articles:
-                    relevant_articles = []
-                    
-                sentiment_analysis = await self._analyze_news_sentiment(relevant_articles)
-                if not sentiment_analysis:
-                    sentiment_analysis = {"overall_sentiment": 0.0}
-                    
-                market_events = await self._detect_market_events(relevant_articles)
-                if not market_events:
-                    market_events = []
-                    
-                sector_impact = await self._analyze_sector_impact(relevant_articles)
-                if not sector_impact:
-                    sector_impact = {}
-                    
-                news_signals = await self._generate_news_trading_signals(sentiment_analysis, market_events, sector_impact)
-                if not news_signals:
-                    news_signals = []
-                    
-                overall_sentiment = self._calculate_overall_market_sentiment(sentiment_analysis, market_events)
-                if not overall_sentiment:
-                    overall_sentiment = {"sentiment_category": "NEUTRAL", "adjusted_sentiment": 0.0}
-                    
-            except Exception as processing_error:
-                logger.error(f"❌ Analysis processing error: {processing_error}")
-                # Return safe defaults
-                relevant_articles = []
-                sentiment_analysis = {"overall_sentiment": 0.0}
-                market_events = []
-                sector_impact = {}
-                news_signals = []
-                overall_sentiment = {"sentiment_category": "NEUTRAL", "adjusted_sentiment": 0.0}
+            if not all_articles:
+                logger.warning("⚠️ No articles fetched from any source")
+                return {
+                    "error": "No articles available",
+                    "fetch_statistics": self.fetch_stats,
+                    "cache_statistics": self.cache_stats,
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            # Process articles
+            relevant_articles = await self._filter_relevant_news(all_articles, symbols, sectors)
+            
+            # Analyze sentiment and extract insights
+            sentiment_analysis = await self._analyze_news_sentiment(relevant_articles)
+            market_events = await self._detect_market_events(relevant_articles)
+            sector_impact = await self._analyze_sector_impact(relevant_articles)
+            news_signals = await self._generate_news_trading_signals(sentiment_analysis, market_events, sector_impact)
+            
+            # Calculate overall sentiment
+            overall_sentiment = self._calculate_overall_market_sentiment(sentiment_analysis, market_events)
             
             # Log results safely
             try:
@@ -438,6 +443,7 @@ class EnhancedNewsIntelligenceSystem:
                     indian_articles = self.fetch_stats.get("indian_articles", 0)
                     logger.info(f"📰 Analysis complete: {len(relevant_articles)} articles from {sources_used} sources")
                     logger.info(f"🇮🇳 Indian articles: {indian_articles}, API calls: {self.fetch_stats.get('api_calls_made', 0)}")
+                    logger.info(f"💾 Cache stats: {self.cache_stats['cache_hits']} hits, {self.cache_stats['cache_misses']} misses")
             except Exception as log_error:
                 logger.debug(f"Logging error: {log_error}")
             
@@ -486,6 +492,7 @@ class EnhancedNewsIntelligenceSystem:
                     "sector_impact": sector_impact,
                     "news_signals": news_signals,
                     "fetch_statistics": self.fetch_stats,
+                    "cache_statistics": self.cache_stats,
                     "indian_market_coverage": {
                         "indian_sources_working": self.fetch_stats.get("indian_articles", 0) > 0,
                         "backup_sources_used": self.fetch_stats.get("backup_sources_used", 0),
@@ -503,6 +510,7 @@ class EnhancedNewsIntelligenceSystem:
                 return {
                     "error": f"Response building failed: {str(response_error)}",
                     "fetch_statistics": self.fetch_stats,
+                    "cache_statistics": self.cache_stats,
                     "timestamp": datetime.now().isoformat()
                 }
             
@@ -511,11 +519,12 @@ class EnhancedNewsIntelligenceSystem:
             return {
                 "error": str(e), 
                 "fetch_statistics": self.fetch_stats,
+                "cache_statistics": self.cache_stats,
                 "timestamp": datetime.now().isoformat()
             }
     
     async def _fetch_all_news_sources(self, lookback_hours: int) -> List[NewsArticle]:
-        """Fetch from all available sources with Indian priority"""
+        """Fetch from all available sources with Indian priority and caching"""
         all_articles = []
         cutoff_time = datetime.now() - timedelta(hours=lookback_hours)
         
@@ -536,6 +545,18 @@ class EnhancedNewsIntelligenceSystem:
             self.fetch_stats["total_attempts"] += 1
             
             try:
+                # Check cache first
+                cached_articles = self._get_cached_articles(source_name, lookback_hours)
+                if cached_articles:
+                    all_articles.extend(cached_articles)
+                    logger.debug(f"📋 Using cached articles for {source_name}: {len(cached_articles)} articles")
+                    continue
+                
+                # Check rate limiting
+                if not self._should_fetch_source(source_name):
+                    logger.debug(f"⏳ Rate limiting prevents fetch for {source_name}")
+                    continue
+                
                 articles = []
                 
                 if source_config["type"] == NewsSource.DOMESTIC_BUSINESS:
@@ -554,10 +575,14 @@ class EnhancedNewsIntelligenceSystem:
                     articles = await self._fetch_newsapi_news(source_name, source_config, cutoff_time)
                 
                 if articles:
+                    # Cache the articles
+                    self._cache_articles(source_name, lookback_hours, articles)
+                    self._update_source_fetch_time(source_name)
+                    
                     all_articles.extend(articles)
                     self.fetch_stats["successful_fetches"] += 1
                     self.fetch_stats["articles_fetched"] += len(articles)
-                    logger.info(f"✅ {source_name}: {len(articles)} articles")
+                    logger.info(f"✅ {source_name}: {len(articles)} articles (cached)")
                     
             except Exception as e:
                 self.fetch_stats["failed_fetches"] += 1
@@ -1417,6 +1442,59 @@ class EnhancedNewsIntelligenceSystem:
             polygon_message = f"Polygon API test error: {e}"
         result["polygon"] = {"status": polygon_status, "message": polygon_message}
         return result
+
+    async def _cleanup_cache(self):
+        """Clean up expired cache entries"""
+        now = datetime.now()
+        expired_keys = []
+        
+        for key, (articles, timestamp) in self.article_cache.items():
+            if (now - timestamp).total_seconds() > self.cache_ttl:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            del self.article_cache[key]
+            self.cache_stats["cache_evictions"] += 1
+        
+        if expired_keys:
+            logger.debug(f"🧹 Cleaned up {len(expired_keys)} expired cache entries")
+    
+    def _get_cache_key(self, source_name: str, lookback_hours: int) -> str:
+        """Generate cache key for source and time window"""
+        return f"{source_name}_{lookback_hours}h"
+    
+    def _get_cached_articles(self, source_name: str, lookback_hours: int) -> Optional[List[NewsArticle]]:
+        """Get cached articles if available and not expired"""
+        cache_key = self._get_cache_key(source_name, lookback_hours)
+        
+        if cache_key in self.article_cache:
+            articles, timestamp = self.article_cache[cache_key]
+            if (datetime.now() - timestamp).total_seconds() < self.cache_ttl:
+                self.cache_stats["cache_hits"] += 1
+                logger.debug(f"📋 Cache hit for {source_name}: {len(articles)} articles")
+                return articles
+        
+        self.cache_stats["cache_misses"] += 1
+        return None
+    
+    def _cache_articles(self, source_name: str, lookback_hours: int, articles: List[NewsArticle]):
+        """Cache articles for future use"""
+        cache_key = self._get_cache_key(source_name, lookback_hours)
+        self.article_cache[cache_key] = (articles, datetime.now())
+        self.cache_stats["total_articles_cached"] += len(articles)
+        logger.debug(f"💾 Cached {len(articles)} articles for {source_name}")
+    
+    def _should_fetch_source(self, source_name: str) -> bool:
+        """Check if source should be fetched based on rate limiting"""
+        if source_name not in self.source_last_fetch:
+            return True
+        
+        time_since_last = (datetime.now() - self.source_last_fetch[source_name]).total_seconds()
+        return time_since_last >= self.min_fetch_interval
+    
+    def _update_source_fetch_time(self, source_name: str):
+        """Update last fetch time for source"""
+        self.source_last_fetch[source_name] = datetime.now()
 
 class NewsIntelligenceFactory:
     @staticmethod

@@ -2,6 +2,8 @@ import logging
 import asyncio
 import traceback
 from typing import Dict, List, Optional, Any
+import time
+from datetime import datetime, time as dt_time
 # WebSocket type will be handled dynamically
 
 from app.services.enhanced_market_data_nifty100 import (
@@ -169,8 +171,23 @@ class CorrectedServiceManager:
             # 4. Initialize news intelligence
             await self._initialize_news_intelligence()
             
+            # --- CRITICAL FIX: Ensure news intelligence is set on ALL relevant services ---
+            if self.news_intelligence:
+                if self.enhanced_market_service:
+                    self.enhanced_market_service.set_news_intelligence(self.news_intelligence)
+                    logger.info("🔗 News intelligence set on Enhanced Market Data Service (post-init)")
+                if self.signal_generator:
+                    self.signal_generator.set_news_intelligence(self.news_intelligence)
+                    logger.info("🔗 News intelligence set on ProductionMLSignalGenerator (post-init)")
+                # If you have other services that use news intelligence, set here as well
+            
             # 5. Initialize signal generator
             await self._initialize_signal_generator()
+            
+            # --- CRITICAL FIX: Ensure news intelligence is set on signal generator after it is created ---
+            if self.news_intelligence and self.signal_generator:
+                self.signal_generator.set_news_intelligence(self.news_intelligence)
+                logger.info("🔗 News intelligence set on ProductionMLSignalGenerator (after creation)")
             
             # 6. Initialize notification services
             await self._initialize_notification_services()
@@ -188,7 +205,7 @@ class CorrectedServiceManager:
             await self._perform_health_check()
             
             self._is_initialized = True
-            logger.info("✅ TradeMind AI Service Coordinator initialized successfully!")
+            logger.info(f"✅ TradeMind AI Service Coordinator initialized successfully! News Intelligence status: {'ACTIVE' if self.news_intelligence else 'INACTIVE'}")
             
         except Exception as e:
             self.initialization_error = str(e)
@@ -217,6 +234,7 @@ class CorrectedServiceManager:
             if ENHANCED_MARKET_DATA_AVAILABLE:
                 self.enhanced_market_service = EnhancedMarketDataService()
                 await self.enhanced_market_service.initialize()
+                self.enhanced_market_service.set_service_manager(self)
                 
                 self.system_health["enhanced_market_data"] = True
                 self.system_health["nifty100_universe"] = True
@@ -612,6 +630,192 @@ class CorrectedServiceManager:
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache performance statistics"""
         return self.cache_manager.get_metrics()
+
+    async def start_signal_generation(self):
+        """Start signal generation with comprehensive monitoring"""
+        if self.signal_generation_active:
+            logger.info("⚠️ Signal generation already active")
+            return
+        
+        try:
+            logger.info("🚀 Starting TradeMind AI signal generation system...")
+            logger.info(f"📊 Current regime: {self.current_regime}")
+            logger.info(f"📰 News Intelligence: {'✅ ACTIVE' if self.news_intelligence else '❌ INACTIVE'}")
+            logger.info(f"🎯 Signal generation mode: PRODUCTION")
+            
+            # Initialize signal generation
+            self.signal_generation_active = True
+            self.signal_generation_task = asyncio.create_task(self._monitored_signal_generation_loop())
+            
+            # Log system status
+            await self._log_system_status("SIGNAL_GENERATION_STARTED")
+            
+            logger.info("✅ Signal generation started successfully")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to start signal generation: {e}")
+            self.signal_generation_active = False
+    
+    async def _monitored_signal_generation_loop(self):
+        """Monitored signal generation loop with comprehensive logging"""
+        loop_start_time = time.time()
+        signal_count = 0
+        last_status_update = time.time()
+        
+        logger.info("🔄 Starting monitored signal generation loop...")
+        
+        try:
+            while self.signal_generation_active:
+                loop_iteration_start = time.time()
+                
+                try:
+                    # Check pre-market analysis trigger
+                    await self._check_premarket_analysis_trigger()
+                    
+                    # Check priority trading trigger
+                    await self._check_priority_trading_trigger()
+                    
+                    # Check regular signal generation
+                    await self._check_regular_signal_generation()
+                    
+                    # Update signal count
+                    if hasattr(self, 'signal_service') and self.signal_service:
+                        # Get current signal count from service
+                        pass  # Signal count tracking will be handled in individual methods
+                    
+                    # Status update every 5 minutes
+                    current_time = time.time()
+                    if current_time - last_status_update >= 300:  # 5 minutes
+                        await self._log_system_status("SIGNAL_GENERATION_STATUS_UPDATE")
+                        last_status_update = current_time
+                    
+                    # Sleep with monitoring
+                    await asyncio.sleep(30)
+                    
+                except asyncio.CancelledError:
+                    logger.info("🛑 Signal generation loop cancelled")
+                    break
+                except Exception as e:
+                    logger.error(f"❌ Signal generation loop error: {e}")
+                    await asyncio.sleep(60)  # Longer sleep on error
+                    
+        except Exception as e:
+            logger.error(f"❌ Monitored signal generation loop failed: {e}")
+        finally:
+            loop_end_time = time.time()
+            total_runtime = loop_end_time - loop_start_time
+            logger.info(f"🔄 Signal generation loop ended after {total_runtime:.2f}s")
+    
+    async def _check_premarket_analysis_trigger(self):
+        """Check and trigger pre-market analysis with monitoring"""
+        try:
+            current_time = datetime.now().time()
+            
+            # Pre-market analysis window: 8:00 AM to 9:10 AM
+            if (dt_time(8, 0) <= current_time <= dt_time(9, 10) and 
+                not self.premarket_analysis_active):
+                
+                logger.info("🌅 Pre-market analysis window detected, starting analysis...")
+                self.premarket_analysis_active = True
+                
+                # Run pre-market analysis with timeout
+                try:
+                    await asyncio.wait_for(self._run_premarket_analysis(), timeout=300.0)  # 5 minutes
+                    logger.info("✅ Pre-market analysis completed successfully")
+                except asyncio.TimeoutError:
+                    logger.error("❌ Pre-market analysis timed out after 5 minutes")
+                except Exception as e:
+                    logger.error(f"❌ Pre-market analysis failed: {e}")
+                finally:
+                    self.premarket_analysis_active = False
+                    
+        except Exception as e:
+            logger.error(f"❌ Pre-market analysis trigger check failed: {e}")
+    
+    async def _check_priority_trading_trigger(self):
+        """Check and trigger priority trading with monitoring"""
+        try:
+            current_time = datetime.now().time()
+            
+            # Priority trading window: 9:15 AM to 9:45 AM
+            if (dt_time(9, 15) <= current_time <= dt_time(9, 45) and 
+                not self.priority_trading_active):
+                
+                logger.info("⚡ Priority trading window detected, starting priority trading...")
+                self.priority_trading_active = True
+                
+                # Run priority trading with timeout
+                try:
+                    await asyncio.wait_for(self._run_priority_trading(), timeout=180.0)  # 3 minutes
+                    logger.info("✅ Priority trading completed successfully")
+                except asyncio.TimeoutError:
+                    logger.error("❌ Priority trading timed out after 3 minutes")
+                except Exception as e:
+                    logger.error(f"❌ Priority trading failed: {e}")
+                finally:
+                    self.priority_trading_active = False
+                    
+        except Exception as e:
+            logger.error(f"❌ Priority trading trigger check failed: {e}")
+    
+    async def _check_regular_signal_generation(self):
+        """Check and trigger regular signal generation with monitoring"""
+        try:
+            current_time = datetime.now().time()
+            
+            # Regular trading hours: 9:15 AM to 3:30 PM
+            if dt_time(9, 15) <= current_time <= dt_time(15, 30):
+                
+                # Check if enough time has passed since last signal generation
+                if (not hasattr(self, '_last_signal_time') or 
+                    self._last_signal_time is None or 
+                    (datetime.now() - self._last_signal_time).total_seconds() >= 300):  # 5 minutes
+                    
+                    logger.info("📊 Regular signal generation interval reached, generating signals...")
+                    
+                    # Run regular signal generation with timeout
+                    try:
+                        await asyncio.wait_for(self._run_regular_signal_generation(), timeout=120.0)  # 2 minutes
+                        self._last_signal_time = datetime.now()
+                        logger.info("✅ Regular signal generation completed successfully")
+                    except asyncio.TimeoutError:
+                        logger.error("❌ Regular signal generation timed out after 2 minutes")
+                    except Exception as e:
+                        logger.error(f"❌ Regular signal generation failed: {e}")
+                        
+        except Exception as e:
+            logger.error(f"❌ Regular signal generation trigger check failed: {e}")
+    
+    async def _log_system_status(self, status_type: str):
+        """Log comprehensive system status"""
+        try:
+            current_time = datetime.now()
+            
+            # Get system metrics
+            system_metrics = {
+                "timestamp": current_time.isoformat(),
+                "status_type": status_type,
+                "signal_generation_active": self.signal_generation_active,
+                "premarket_analysis_active": self.premarket_analysis_active,
+                "priority_trading_active": self.priority_trading_active,
+                "current_regime": str(self.current_regime),
+                "regime_confidence": self.regime_confidence,
+                "news_intelligence_active": bool(self.news_intelligence),
+                "system_health": self.system_health.copy()
+            }
+            
+            # Add signal statistics if available
+            if hasattr(self, 'signal_service') and self.signal_service:
+                try:
+                    # Get signal statistics from service
+                    pass  # Will be implemented based on available methods
+                except Exception as e:
+                    logger.debug(f"Could not get signal statistics: {e}")
+            
+            logger.info(f"📊 System Status ({status_type}): {system_metrics}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to log system status: {e}")
 
 # ================================================================
 # GLOBAL SERVICE MANAGER INSTANCE (for dependency injection)
