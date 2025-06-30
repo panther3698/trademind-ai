@@ -987,6 +987,7 @@ class ProductionMLSignalGenerator:
         Analyze individual stock using simplified ML pipeline with optional news enhancement
         Returns: (SignalRecord or None, ml_confidence or None, rejection_reason or None)
         """
+        filter_results = []  # Track all filter/check results
         try:
             current_regime = self.regime_context.get("regime", "SIDEWAYS")
             logger.debug(f"🤖 Simplified ML + News analysis for {symbol} (Regime: {current_regime})...")
@@ -998,32 +999,56 @@ class ProductionMLSignalGenerator:
                     historical_data = await self.market_data.zerodha.get_historical_data(
                         symbol, "minute", datetime.now() - timedelta(days=30)
                     )
+                    filter_results.append(("historical_data", "OK", f"{len(historical_data)} bars"))
                 else:
                     historical_data = None
+                    filter_results.append(("historical_data", "MISSING", "No zerodha"))
             except Exception as e:
+                filter_results.append(("historical_data", "ERROR", str(e)))
                 return None, None, f"historical_data_error: {e}"
             # Feature engineering
             try:
                 features = self.feature_engineer.create_features(symbol, quote, historical_data)
+                filter_results.append(("feature_engineering", "OK", "Features created"))
             except Exception as e:
+                filter_results.append(("feature_engineering", "ERROR", str(e)))
                 return None, None, f"feature_engineering_error: {e}"
             # ML inference
             try:
                 ml_probability = self.ml_model.predict_signal_probability(features)
+                filter_results.append(("ml_confidence", ml_probability, f"Threshold: {self.min_ml_confidence}"))
             except Exception as e:
+                filter_results.append(("ml_inference", "ERROR", str(e)))
                 return None, None, f"ml_inference_error: {e}"
             # Always attach confidence
             stock_data['ml_confidence'] = ml_probability
             # Confidence threshold check
             if ml_probability < self.min_ml_confidence:
+                filter_results.append(("ml_confidence", "FAIL", f"{ml_probability:.2f} < {self.min_ml_confidence:.2f}"))
                 return None, ml_probability, 'below_confidence_threshold'
+            else:
+                filter_results.append(("ml_confidence", "PASS", f"{ml_probability:.2f} >= {self.min_ml_confidence:.2f}"))
             # Post-processing and signal creation
             try:
                 signal = self._postprocess_signal(features, ml_probability, symbol, quote)
                 if not signal:
+                    filter_results.append(("postprocess", "FAIL", "No signal returned"))
                     return None, ml_probability, 'postprocess_failed'
             except Exception as e:
+                filter_results.append(("postprocess", "ERROR", str(e)))
                 return None, ml_probability, f'postprocess_error: {e}'
+            # --- Log and attach filter results ---
+            filter_log = f"🟢 {symbol} passed all filters:\n" + "\n".join([
+                f"  - {name}: {result} ({detail})" for name, result, detail in filter_results
+            ])
+            logger.info(filter_log)
+            # Attach to signal notes/debug_info
+            if hasattr(signal, 'notes') and signal.notes:
+                signal.notes += "\n" + filter_log
+            else:
+                signal.notes = filter_log
+            if hasattr(signal, 'debug_info'):
+                signal.debug_info = filter_results
             return signal, ml_probability, None
         except Exception as e:
             return None, None, f'exception: {e}'
