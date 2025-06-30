@@ -1004,7 +1004,7 @@ class ProductionMLSignalGenerator:
                 return None, None, f"historical_data_error: {e}"
             # Feature engineering
             try:
-                features = self.feature_engineer.create_features(symbol, quote, historical_data)
+                features = self.feature_engineer.engineer_features(symbol, quote, historical_data)
                 filter_results.append(("feature_engineering", "OK", "Features created"))
             except Exception as e:
                 filter_results.append(("feature_engineering", "ERROR", str(e)))
@@ -1066,7 +1066,7 @@ class ProductionMLSignalGenerator:
             filter_results.append(("model_scores", model_scores, 'All model confidences'))
             # Post-processing and signal creation
             try:
-                signal = self._postprocess_signal(features, ml_probability, symbol, quote)
+                signal = await self._postprocess_signal(features, ml_probability, symbol, quote)
                 if not signal:
                     filter_results.append(("postprocess", "FAIL", "No signal returned"))
                     return None, ml_probability, 'postprocess_failed'
@@ -1089,40 +1089,29 @@ class ProductionMLSignalGenerator:
         except Exception as e:
             return None, None, f'exception: {e}'
     
-    def _postprocess_signal(self, features: Dict, ml_probability: float, symbol: str, quote: Dict) -> Optional[SignalRecord]:
-        """Post-process the signal based on ML output and regime context"""
+    async def _postprocess_signal(self, features: Dict, ml_probability: float, symbol: str, quote: Dict) -> Optional[SignalRecord]:
         try:
             current_regime = self.regime_context.get("regime", "SIDEWAYS")
             logger.debug(f"🤖 Post-processing signal for {symbol} (Regime: {current_regime})...")
-            
-            # Determine signal direction based on ML output
             direction = SignalDirection.BUY if ml_probability > 0.5 else SignalDirection.SELL
-            
-            # Calculate price levels using regime-enhanced logic
             entry_price = quote["ltp"]
             stop_loss, target_price = self._calculate_regime_aware_price_levels(
                 entry_price, features, direction, ml_probability, current_regime
             )
-            
-            # Calculate position sizing based on ML confidence and regime
             position_size = self._calculate_regime_aware_position_size(
                 entry_price, stop_loss, ml_probability, features, current_regime
             )
-            
-            # Create comprehensive signal record with regime awareness + optional news enhancement
             signal = SignalRecord(
-                signal_id=f"ML_{current_regime}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}",
-                timestamp=datetime.now(),
                 ticker=symbol,
                 direction=direction,
                 entry_price=entry_price,
                 stop_loss=stop_loss,
                 target_price=target_price,
-                ml_confidence=ml_probability,  # Use news-enhanced confidence
+                ml_confidence=ml_probability,
                 technical_score=features.get("technical_composite_score", 0.0),
                 sentiment_score=features.get("sentiment_score", 0.0),
                 macro_score=features.get("nifty_performance", 0.0),
-                final_score=ml_probability,  # News-enhanced ML probability is our final score
+                final_score=ml_probability,
                 indicators=self._create_technical_indicators_from_features(features),
                 market_context=await self._create_enhanced_market_context(features),
                 pre_market=self._create_pre_market_data_from_features(features, features),
@@ -1133,10 +1122,8 @@ class ProductionMLSignalGenerator:
                 signal_source=f"SIMPLIFIED_ML_{current_regime}",
                 notes=self._create_simplified_signal_notes(symbol, current_regime, ml_probability, ml_probability, features, features)
             )
-            
             logger.debug(f"✅ {symbol} Simplified ML Signal: {direction.value} Confidence: {ml_probability:.1%}")
             return signal
-            
         except Exception as e:
             logger.error(f"Failed to post-process signal for {symbol}: {e}")
             return None
