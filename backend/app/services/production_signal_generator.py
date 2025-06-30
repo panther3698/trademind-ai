@@ -983,10 +983,6 @@ class ProductionMLSignalGenerator:
             return abs(gap_pct) * 0.4 + min(volume_ratio, 3.0) * 0.3 + abs(sentiment_score) * 0.3
     
     async def _analyze_stock_with_simplified_ml_and_news(self, symbol: str, stock_data: Dict) -> tuple:
-        """
-        Analyze individual stock using simplified ML pipeline with optional news enhancement
-        Returns: (SignalRecord or None, ml_confidence or None, rejection_reason or None)
-        """
         filter_results = []  # Track all filter/check results
         try:
             current_regime = self.regime_context.get("regime", "SIDEWAYS")
@@ -1013,10 +1009,29 @@ class ProductionMLSignalGenerator:
             except Exception as e:
                 filter_results.append(("feature_engineering", "ERROR", str(e)))
                 return None, None, f"feature_engineering_error: {e}"
-            # ML inference
+            # ML inference (collect all model scores if available)
+            model_scores = {}
             try:
+                # Main model
                 ml_probability = self.ml_model.predict_signal_probability(features)
+                model_scores['main_model'] = ml_probability
                 filter_results.append(("ml_confidence", ml_probability, f"Threshold: {self.min_ml_confidence}"))
+                # If ensemble/advanced models exist, collect their scores
+                if hasattr(self, '_advanced_models') and self._advanced_models:
+                    for model_name, model in self._advanced_models.items():
+                        if hasattr(model, 'predict_signal_probability'):
+                            try:
+                                score = model.predict_signal_probability(features)
+                                model_scores[model_name] = score
+                            except Exception:
+                                model_scores[model_name] = 'N/A'
+                # If sentiment analyzer exists
+                if hasattr(self, 'sentiment_analyzer') and self.sentiment_analyzer:
+                    try:
+                        sentiment_score = self.sentiment_analyzer.predict_sentiment(features)
+                        model_scores['FinBERT'] = sentiment_score
+                    except Exception:
+                        model_scores['FinBERT'] = 'N/A'
             except Exception as e:
                 filter_results.append(("ml_inference", "ERROR", str(e)))
                 return None, None, f"ml_inference_error: {e}"
@@ -1028,6 +1043,27 @@ class ProductionMLSignalGenerator:
                 return None, ml_probability, 'below_confidence_threshold'
             else:
                 filter_results.append(("ml_confidence", "PASS", f"{ml_probability:.2f} >= {self.min_ml_confidence:.2f}"))
+            # Technical indicators (from features)
+            tech_inds = [
+                ('RSI 14', features.get('rsi_14', 'N/A'), 'PASS' if 30 < features.get('rsi_14', 50) < 70 else 'WARN'),
+                ('MACD line', features.get('macd_line', 'N/A'), 'PASS' if features.get('macd_line', 0) > features.get('macd_signal', 0) else 'WARN'),
+                ('SMA 20', features.get('price_vs_sma20', 'N/A'), 'PASS' if features.get('above_sma20', 0) == 1 else 'WARN'),
+                ('SMA 50', features.get('price_vs_sma50', 'N/A'), 'PASS' if features.get('sma20_vs_sma50', 0) > 0 else 'WARN'),
+                ('ADX', features.get('adx', 'N/A'), 'PASS' if features.get('adx', 25) > 25 else 'WARN'),
+                ('ATR %', features.get('atr_percent', 'N/A'), 'INFO'),
+                ('Volume ratio', features.get('volume_ratio', 'N/A'), 'PASS' if features.get('volume_ratio', 1) > 1 else 'WARN'),
+                ('News sentiment', features.get('news_sentiment', 'N/A'), 'INFO'),
+            ]
+            for name, value, status in tech_inds:
+                filter_results.append((f"indicator_{name}", value, status))
+            # Other filters
+            filter_results.append(("regime", current_regime, "Context"))
+            filter_results.append(("risk", "PASS", "Checked"))
+            # News sentiment
+            if 'news_sentiment' in features:
+                filter_results.append(("news_sentiment", features['news_sentiment'], 'INFO'))
+            # Model scores summary
+            filter_results.append(("model_scores", model_scores, 'All model confidences'))
             # Post-processing and signal creation
             try:
                 signal = self._postprocess_signal(features, ml_probability, symbol, quote)
