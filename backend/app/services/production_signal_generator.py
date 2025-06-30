@@ -542,6 +542,11 @@ class ProductionMLSignalGenerator:
         start_time = time.time()
         logger.info(f"🚀 Starting signal generation process...")
         
+        # --- BEGIN ADDITION ---
+        total_analyzed = 0
+        confidence_rejected = 0
+        confidence_rejected_symbols = []
+        # --- END ADDITION ---
         try:
             # Reset daily counter if new day
             today = datetime.now().date()
@@ -599,28 +604,23 @@ class ProductionMLSignalGenerator:
                         
                     symbol = stock_data["symbol"]
                     logger.debug(f"Analyzing {symbol} ({i+1}/{len(opportunities)})")
-                    
+                    total_analyzed += 1  # Track total
                     # Add timeout for individual stock analysis
                     signal = await asyncio.wait_for(
                         self._analyze_stock_with_simplified_ml_and_news(symbol, stock_data),
                         timeout=15.0
                     )
-                    
                     if signal:
                         # Validate signal with regime-aware risk management
                         risk_check = self.signal_logger.check_risk_limits(signal)
-                        
                         if risk_check["overall_risk_ok"]:
                             # Add regime metadata to signal
                             signal = self._enhance_signal_with_regime_data(signal)
-                            
                             signals.append(signal)
                             self.daily_signal_count += 1
-                            
                             # Track if enhanced by news
                             if hasattr(signal, 'notes') and signal.notes and 'News Enhanced' in signal.notes:
                                 self.news_enhanced_signals_count += 1
-                            
                             # Log the signal with regime info
                             success = self.signal_logger.log_signal(signal)
                             if success:
@@ -628,21 +628,35 @@ class ProductionMLSignalGenerator:
                                 logger.info(f"🎯 ML Signal ({current_regime}): {signal.ticker} {signal.direction.value} {news_indicator} "
                                           f"ML Confidence: {signal.ml_confidence:.1%} | "
                                           f"Entry: ₹{signal.entry_price} | Risk Adj: {self.regime_context.get('risk_adjustment', 1.0):.1f}x")
-                            
                             # Track regime-specific performance
                             self._track_regime_signal(signal, current_regime)
                         else:
                             logger.debug(f"Signal rejected for {symbol}: Risk limits exceeded")
                     else:
-                        logger.debug(f"No signal generated for {symbol}")
-                        
+                        # --- BEGIN ADDITION ---
+                        # Check if rejected due to ML confidence threshold
+                        ml_conf = stock_data.get('ml_confidence')
+                        min_conf = self.min_ml_confidence
+                        if ml_conf is not None and ml_conf < min_conf:
+                            confidence_rejected += 1
+                            confidence_rejected_symbols.append((symbol, ml_conf))
+                            logger.info(f"❌ {symbol} rejected: ML confidence {ml_conf:.2f} below threshold {min_conf:.2f}")
+                        else:
+                            logger.debug(f"No signal generated for {symbol}")
+                        # --- END ADDITION ---
                 except asyncio.TimeoutError:
                     logger.warning(f"⚠️ Signal generation timed out for {symbol}")
                     continue
                 except Exception as e:
                     logger.error(f"Signal generation failed for {symbol}: {e}")
                     continue
-            
+            # --- BEGIN ADDITION ---
+            if total_analyzed > 0:
+                percent_rejected = (confidence_rejected / total_analyzed) * 100
+                logger.info(f"📊 {confidence_rejected}/{total_analyzed} stocks ({percent_rejected:.1f}%) rejected due to ML confidence threshold ({self.min_ml_confidence:.2f})")
+                if confidence_rejected_symbols:
+                    logger.info(f"Symbols rejected (confidence): {[f'{s}({c:.2f})' for s,c in confidence_rejected_symbols]}")
+            # --- END ADDITION ---
             # Log completion with detailed metrics
             end_time = time.time()
             processing_time = end_time - start_time
